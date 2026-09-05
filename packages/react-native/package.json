@@ -15,14 +15,21 @@
     "test": "vitest run"
   },
   "peerDependencies": {
+    "react": ">=18",
     "react-native": ">=0.74"
   },
   "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
     "react-native": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "19.2.3",
+    "react-native": "npm:react-native-tvos@0.87.1-0",
     "vitest": "^5.0.0"
   }
 }

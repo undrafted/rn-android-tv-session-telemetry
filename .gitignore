@@ -7,17 +7,8 @@ npm-debug.log*
 # Rust
 target/
 
-# Android
-android/**/build/
-android/.gradle/
-android/local.properties
-*.hprof
-android/**/*.iml
-android/.idea/
-
-# React Native / Metro
-.metro-health-check*
-*.jsbundle
+# Android/React Native: each app under apps/*/ ships its own .gitignore (from the RN CLI
+# template) scoped to that app's own android/, node_modules/, build artifacts, etc.
 
 # Recorded sessions (large, machine-specific — keep fixtures/sessions curated instead)
 *.rnst

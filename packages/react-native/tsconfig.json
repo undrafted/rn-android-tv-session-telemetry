@@ -2,7 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    // react-native-tvos@0.87.1-0's "types_generated" export target (its default `types`
+    // condition) is missing from the published package; its legacy `types/index.d.ts` entry
+    // has the full surface, TV augmentations included. Drop this once a react-native-tvos
+    // release ships types_generated again.
+    "paths": {
+      "react-native": ["./node_modules/react-native/types/index.d.ts"]
+    }
   },
   "include": ["src"]
 }
