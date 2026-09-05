@@ -1,1 +1,1 @@
-# RN Session Telemetry
+React Native Session Telemetry
