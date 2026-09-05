@@ -1,0 +1,9 @@
+dist/
+node_modules/
+target/
+android/**/build/
+.claude/
+*.rnst
+
+# Local-only planning doc, not generated/maintained by this toolchain
+plan.md

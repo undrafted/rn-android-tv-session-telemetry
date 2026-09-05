@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+session-telemetry-adb = { path = "crates/session-telemetry-adb" }
+session-telemetry-analysis = { path = "crates/session-telemetry-analysis" }
+session-telemetry-protocol = { path = "crates/session-telemetry-protocol" }
+session-telemetry-report = { path = "crates/session-telemetry-report" }
+session-telemetry-session = { path = "crates/session-telemetry-session" }

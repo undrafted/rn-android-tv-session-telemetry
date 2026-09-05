@@ -1,0 +1,8 @@
+[package]
+name = "session-telemetry-adb"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+session-telemetry-protocol.workspace = true

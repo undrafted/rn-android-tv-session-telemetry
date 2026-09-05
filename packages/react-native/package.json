@@ -1,0 +1,28 @@
+{
+  "name": "@rn-session-telemetry/react-native",
+  "version": "0.0.0",
+  "description": "Embedded session telemetry library for React Native applications on Android TV.",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react-native": ">=0.74"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "vitest": "^5.0.0"
+  }
+}

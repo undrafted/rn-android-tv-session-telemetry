@@ -1,0 +1,16 @@
+[package]
+name = "session-telemetry-cli"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "session-telemetry"
+path = "src/main.rs"
+
+[dependencies]
+session-telemetry-adb.workspace = true
+session-telemetry-analysis.workspace = true
+session-telemetry-protocol.workspace = true
+session-telemetry-report.workspace = true
+session-telemetry-session.workspace = true

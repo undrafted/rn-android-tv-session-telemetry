@@ -1,0 +1,24 @@
+{
+  "name": "@rn-session-telemetry/redux",
+  "version": "0.0.0",
+  "description": "Optional Redux action-marker middleware for RN Session Telemetry.",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "redux": "^4.0.0 || ^5.0.0"
+  },
+  "devDependencies": {
+    "redux": "^5.0.1",
+    "vitest": "^5.0.0"
+  }
+}
