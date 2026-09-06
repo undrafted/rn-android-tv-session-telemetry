@@ -52,9 +52,10 @@ describe('install/stop', () => {
 });
 
 describe('before install', () => {
-  it('mark and recordFocus are no-ops', () => {
+  it('mark, recordFocus, and recordDispatch are no-ops', () => {
     SessionTelemetry.mark('should-be-dropped');
     SessionTelemetry.recordFocus('should-be-dropped');
+    SessionTelemetry.recordDispatch('should/be-dropped', 1);
 
     expect(SessionTelemetry.getBufferedEvents()).toEqual([]);
   });
@@ -102,6 +103,21 @@ describe('mark', () => {
 
     expect(SessionTelemetry.getBufferedEvents()).toEqual([
       expect.objectContaining({ type: 'interaction-marker', name: 'demo:card-select' }),
+    ]);
+  });
+});
+
+describe('recordDispatch', () => {
+  it('records the action type and duration', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.recordDispatch('catalog/itemFocused', 4.2);
+
+    expect(SessionTelemetry.getBufferedEvents()).toEqual([
+      expect.objectContaining({
+        type: 'redux-dispatch',
+        actionType: 'catalog/itemFocused',
+        durationMs: 4.2,
+      }),
     ]);
   });
 });

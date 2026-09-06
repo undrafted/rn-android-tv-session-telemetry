@@ -7,6 +7,7 @@ export type {
   RemoteInputEvent,
   FocusEvent,
   InteractionMarkerEvent,
+  ReduxDispatchEvent,
 } from './events.js';
 export { FocusableView, type FocusableViewProps } from './FocusableView.js';
 
@@ -15,6 +16,7 @@ export interface SessionTelemetryApi {
   stop(): void;
   mark(name: string): void;
   recordFocus(targetId: string): void;
+  recordDispatch(actionType: string, durationMs: number): void;
   // Temporary: exposes the in-memory buffer until a native chunk writer exists (plan.md
   // Week 4 gate). Not part of the stable V1 API surface.
   getBufferedEvents(): readonly SessionTelemetryEvent[];
@@ -83,6 +85,19 @@ function recordFocus(targetId: string): void {
   previousFocusTarget = targetId;
 }
 
+function recordDispatch(actionType: string, durationMs: number): void {
+  if (!installed) {
+    return;
+  }
+  buffer.push({
+    type: 'redux-dispatch',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    actionType,
+    durationMs,
+  });
+}
+
 function getBufferedEvents(): readonly SessionTelemetryEvent[] {
   return buffer;
 }
@@ -92,5 +107,6 @@ export const SessionTelemetry: SessionTelemetryApi = {
   stop,
   mark,
   recordFocus,
+  recordDispatch,
   getBufferedEvents,
 };
