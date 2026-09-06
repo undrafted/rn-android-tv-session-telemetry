@@ -124,7 +124,9 @@ dependencies = [
 name = "session-telemetry-report"
 version = "0.0.0"
 dependencies = [
- "session-telemetry-analysis",
+ "serde",
+ "serde_json",
+ "session-telemetry-protocol",
 ]
 
 [[package]]
