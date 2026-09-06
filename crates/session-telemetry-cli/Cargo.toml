@@ -10,7 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 session-telemetry-adb.workspace = true
-session-telemetry-analysis.workspace = true
-session-telemetry-protocol.workspace = true
-session-telemetry-report.workspace = true
-session-telemetry-session.workspace = true
+clap.workspace = true
+
+[lib]
+name = "session_telemetry_cli"
+path = "src/lib.rs"
