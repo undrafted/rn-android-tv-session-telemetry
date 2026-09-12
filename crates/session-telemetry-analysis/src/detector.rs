@@ -1,7 +1,12 @@
 use crate::interaction::InteractionWindow;
+use session_telemetry_protocol::Event;
+use std::collections::HashMap;
 
 pub const HIGH_LATENCY_FOCUS_CHANGE_DETECTOR: &str = "high-latency-focus-change";
 pub const HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION: u32 = 1;
+
+pub const REPEATED_REDUX_DISPATCH_DETECTOR: &str = "repeated-redux-dispatch";
+pub const REPEATED_REDUX_DISPATCH_DETECTOR_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -21,7 +26,11 @@ pub struct Finding {
     pub severity: Severity,
     pub sequence_start: u64,
     pub sequence_end: u64,
-    pub latency_ms: f64,
+    /// The measurement this finding is based on — a latency in ms, a repeat count, etc.
+    /// Generic rather than e.g. `latency_ms` because not every detector measures a duration
+    /// (plan.md section 7: findings carry "recorded values with units", plural kinds of both).
+    pub value: f64,
+    pub unit: &'static str,
 }
 
 /// Flags interactions whose input-to-focus-change latency crosses a threshold — the first of
@@ -53,10 +62,50 @@ pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<F
                 severity,
                 sequence_start: window.input.sequence,
                 sequence_end: focus.sequence,
-                latency_ms,
+                value: latency_ms,
+                unit: "ms",
             })
         })
         .collect()
+}
+
+/// Flags interaction windows where the same Redux action type was dispatched more than once —
+/// plan.md section 7 detector #4, "repeated Redux actions during one remote-input burst". A
+/// repeat threshold of 2 (i.e. any duplicate) is a starting guess, not a measured number, same
+/// caveat as the latency thresholds above.
+pub fn detect_repeated_redux_dispatches(windows: &[InteractionWindow]) -> Vec<Finding> {
+    const REPEAT_THRESHOLD: usize = 2;
+
+    let mut findings = Vec::new();
+
+    for window in windows {
+        let mut by_action_type: HashMap<&str, Vec<u64>> = HashMap::new();
+        for event in &window.other_events {
+            if let Event::ReduxDispatch(dispatch) = event {
+                by_action_type
+                    .entry(dispatch.action_type.as_str())
+                    .or_default()
+                    .push(dispatch.sequence);
+            }
+        }
+
+        for sequences in by_action_type.into_values() {
+            if sequences.len() < REPEAT_THRESHOLD {
+                continue;
+            }
+            findings.push(Finding {
+                detector: REPEATED_REDUX_DISPATCH_DETECTOR,
+                detector_version: REPEATED_REDUX_DISPATCH_DETECTOR_VERSION,
+                severity: Severity::Warning,
+                sequence_start: window.input.sequence,
+                sequence_end: *sequences.iter().max().expect("non-empty"),
+                value: sequences.len() as f64,
+                unit: "dispatches",
+            });
+        }
+    }
+
+    findings
 }
 
 #[cfg(test)]
@@ -95,7 +144,8 @@ mod tests {
 
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Warning);
-        assert_eq!(findings[0].latency_ms, 150.0);
+        assert_eq!(findings[0].value, 150.0);
+        assert_eq!(findings[0].unit, "ms");
     }
 
     #[test]
@@ -118,5 +168,72 @@ mod tests {
         };
 
         assert_eq!(detect_high_latency_focus_changes(&[window]), vec![]);
+    }
+
+    fn dispatch(sequence: u64, action_type: &str) -> Event {
+        Event::ReduxDispatch(session_telemetry_protocol::ReduxDispatchEvent {
+            sequence,
+            timestamp: sequence as f64,
+            action_type: action_type.to_string(),
+            duration_ms: 1.0,
+        })
+    }
+
+    #[test]
+    fn a_single_dispatch_is_not_repeated() {
+        let window = InteractionWindow {
+            input: RemoteInputEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                key: "right".to_string(),
+            },
+            focus: None,
+            other_events: vec![dispatch(1, "catalog/itemFocused")],
+        };
+
+        assert_eq!(detect_repeated_redux_dispatches(&[window]), vec![]);
+    }
+
+    #[test]
+    fn the_same_action_type_dispatched_twice_is_flagged() {
+        let window = InteractionWindow {
+            input: RemoteInputEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                key: "right".to_string(),
+            },
+            focus: None,
+            other_events: vec![
+                dispatch(1, "catalog/itemFocused"),
+                dispatch(2, "catalog/itemFocused"),
+            ],
+        };
+
+        let findings = detect_repeated_redux_dispatches(&[window]);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].detector, REPEATED_REDUX_DISPATCH_DETECTOR);
+        assert_eq!(findings[0].sequence_start, 0);
+        assert_eq!(findings[0].sequence_end, 2);
+        assert_eq!(findings[0].value, 2.0);
+        assert_eq!(findings[0].unit, "dispatches");
+    }
+
+    #[test]
+    fn different_action_types_are_not_conflated() {
+        let window = InteractionWindow {
+            input: RemoteInputEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                key: "right".to_string(),
+            },
+            focus: None,
+            other_events: vec![
+                dispatch(1, "catalog/itemFocused"),
+                dispatch(2, "nav/moveRight"),
+            ],
+        };
+
+        assert_eq!(detect_repeated_redux_dispatches(&[window]), vec![]);
     }
 }

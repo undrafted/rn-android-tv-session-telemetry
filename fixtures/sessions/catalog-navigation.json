@@ -2,12 +2,12 @@
   "manifest": {
     "schemaVersion": 1,
     "sequenceStart": 0,
-    "sequenceEnd": 7,
+    "sequenceEnd": 12,
     "timestampStart": 0.0,
-    "timestampEnd": 714.0,
-    "eventCount": 8,
+    "timestampEnd": 850.0,
+    "eventCount": 13,
     "lossCount": 0,
-    "checksum": 568627439
+    "checksum": 4173631147
   },
   "events": [
     {
@@ -62,6 +62,40 @@
       "timestamp": 714.0,
       "targetId": "card-2",
       "previousTargetId": "card-0"
+    },
+    {
+      "type": "remote-input",
+      "sequence": 8,
+      "timestamp": 800.0,
+      "key": "right"
+    },
+    {
+      "type": "redux-dispatch",
+      "sequence": 9,
+      "timestamp": 802.0,
+      "actionType": "catalog/itemFocused",
+      "durationMs": 1.0
+    },
+    {
+      "type": "redux-dispatch",
+      "sequence": 10,
+      "timestamp": 804.0,
+      "actionType": "catalog/itemFocused",
+      "durationMs": 1.0
+    },
+    {
+      "type": "redux-dispatch",
+      "sequence": 11,
+      "timestamp": 806.0,
+      "actionType": "catalog/itemFocused",
+      "durationMs": 1.0
+    },
+    {
+      "type": "focus",
+      "sequence": 12,
+      "timestamp": 850.0,
+      "targetId": "card-3",
+      "previousTargetId": "card-2"
     }
   ]
 }

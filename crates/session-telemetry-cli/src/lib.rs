@@ -115,12 +115,13 @@ pub fn format_findings(findings: &[Finding]) -> String {
                 Severity::Critical => "critical",
             };
             format!(
-                "[{severity}] {} (v{}): sequence {}-{}, {:.1}ms",
+                "[{severity}] {} (v{}): sequence {}-{}, {} {}",
                 finding.detector,
                 finding.detector_version,
                 finding.sequence_start,
                 finding.sequence_end,
-                finding.latency_ms
+                finding.value,
+                finding.unit
             )
         })
         .collect::<Vec<_>>()
@@ -201,12 +202,13 @@ mod tests {
             severity: Severity::Warning,
             sequence_start: 3,
             sequence_end: 7,
-            latency_ms: 214.0,
+            value: 214.0,
+            unit: "ms",
         }];
 
         assert_eq!(
             format_findings(&findings),
-            "[warning] high-latency-focus-change (v1): sequence 3-7, 214.0ms"
+            "[warning] high-latency-focus-change (v1): sequence 3-7, 214 ms"
         );
     }
 }

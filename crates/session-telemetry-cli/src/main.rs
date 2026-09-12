@@ -1,6 +1,8 @@
 use clap::Parser;
 use session_telemetry_adb::parse_devices_output;
-use session_telemetry_analysis::{build_interaction_windows, detect_high_latency_focus_changes};
+use session_telemetry_analysis::{
+    build_interaction_windows, detect_high_latency_focus_changes, detect_repeated_redux_dispatches,
+};
 use session_telemetry_cli::{Cli, Command, format_devices, format_findings};
 use session_telemetry_report::SessionSummary;
 use session_telemetry_session::Chunk;
@@ -63,7 +65,11 @@ fn load_chunk(session: &str) -> Chunk {
 fn run_analyze(session: &str) {
     let chunk = load_chunk(session);
     let windows = build_interaction_windows(&chunk.events);
-    let findings = detect_high_latency_focus_changes(&windows);
+
+    let mut findings = detect_high_latency_focus_changes(&windows);
+    findings.extend(detect_repeated_redux_dispatches(&windows));
+    findings.sort_by_key(|finding| finding.sequence_start);
+
     println!("{}", format_findings(&findings));
 }
 

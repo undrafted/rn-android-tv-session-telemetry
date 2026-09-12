@@ -1,9 +1,10 @@
 //! Generates the deterministic fixture session at fixtures/sessions/catalog-navigation.json.
 //! Run with: cargo run -p session-telemetry-session --example generate_fixture
 //!
-//! Two interactions: a quick, unremarkable focus move, and a slow one matching the 214ms
-//! example trace in plan.md section 1 exactly, so `session-telemetry analyze` on this fixture
-//! produces one real finding.
+//! Three interactions: a quick, unremarkable focus move; a slow one matching the 214ms example
+//! trace in plan.md section 1 exactly; and a rapid-fire burst that redundantly dispatches the
+//! same Redux action three times. `session-telemetry analyze` on this fixture should produce
+//! exactly two findings, one from each of the two detectors.
 
 use session_telemetry_protocol::{
     Event, FocusEvent, InteractionMarkerEvent, ReduxDispatchEvent, RemoteInputEvent,
@@ -60,6 +61,39 @@ fn main() {
         timestamp: 714.0,
         target_id: "card-2".to_string(),
         previous_target_id: Some("card-0".to_string()),
+    }));
+
+    // Interaction C: rapid-fire input redundantly dispatches the same action three times before
+    // focus settles — fast overall (50ms, no latency finding), but should trip the repeated-
+    // dispatch detector.
+    writer.push(Event::RemoteInput(RemoteInputEvent {
+        sequence: 8,
+        timestamp: 800.0,
+        key: "right".to_string(),
+    }));
+    writer.push(Event::ReduxDispatch(ReduxDispatchEvent {
+        sequence: 9,
+        timestamp: 802.0,
+        action_type: "catalog/itemFocused".to_string(),
+        duration_ms: 1.0,
+    }));
+    writer.push(Event::ReduxDispatch(ReduxDispatchEvent {
+        sequence: 10,
+        timestamp: 804.0,
+        action_type: "catalog/itemFocused".to_string(),
+        duration_ms: 1.0,
+    }));
+    writer.push(Event::ReduxDispatch(ReduxDispatchEvent {
+        sequence: 11,
+        timestamp: 806.0,
+        action_type: "catalog/itemFocused".to_string(),
+        duration_ms: 1.0,
+    }));
+    writer.push(Event::Focus(FocusEvent {
+        sequence: 12,
+        timestamp: 850.0,
+        target_id: "card-3".to_string(),
+        previous_target_id: Some("card-2".to_string()),
     }));
 
     let chunk = writer.seal().expect("writer is non-empty");
