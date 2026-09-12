@@ -7,7 +7,7 @@ flowchart TD
     Network["Network requests"] --> Timeline
     VisibleUpdate["Visible-update marker<br/>(planned)"] -.-> Timeline
     ReactCommit["React commits<br/>(planned)"] -.-> Timeline
-    JSStall["JS stalls<br/>(planned)"] -.-> Timeline
+    JSStall["JS stalls"] --> Timeline
     FrameTiming["Android frame timing<br/>(planned)"] -.-> Timeline
     Bookmarks["QA bookmarks<br/>(planned)"] -.-> Timeline
     SessionMeta["Session metadata<br/>device · clock mapping · loss counters<br/>(planned)"] -.-> Summary
