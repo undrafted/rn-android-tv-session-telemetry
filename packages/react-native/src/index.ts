@@ -10,6 +10,7 @@ export type {
   ReduxDispatchEvent,
 } from './events.js';
 export { FocusableView, type FocusableViewProps } from './FocusableView.js';
+export { normalizeUrl, type NormalizeUrlOptions } from './network.js';
 
 export interface InstallOptions {
   // Once the buffer reaches this size, the oldest event is dropped for each new one recorded
