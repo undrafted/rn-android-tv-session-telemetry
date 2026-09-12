@@ -28,8 +28,20 @@ export interface ReduxDispatchEvent {
   durationMs: number;
 }
 
+export interface NetworkEvent {
+  type: 'network';
+  sequence: number;
+  timestamp: number;
+  method: string;
+  url: string;
+  status: number;
+  durationMs: number;
+  requestBytes: number | null;
+  responseBytes: number | null;
+}
+
 export type SessionTelemetryEvent =
-  RemoteInputEvent | FocusEvent | InteractionMarkerEvent | ReduxDispatchEvent;
+  RemoteInputEvent | FocusEvent | InteractionMarkerEvent | ReduxDispatchEvent | NetworkEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,

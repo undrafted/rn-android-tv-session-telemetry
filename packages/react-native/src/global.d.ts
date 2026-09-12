@@ -3,3 +3,9 @@
 declare const performance: {
   now(): number;
 };
+
+// RN/Hermes polyfills TextEncoder for the fetch/network instrumentation path; again only the
+// piece actually used.
+declare class TextEncoder {
+  encode(input: string): Uint8Array;
+}

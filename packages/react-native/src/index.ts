@@ -8,9 +8,10 @@ export type {
   FocusEvent,
   InteractionMarkerEvent,
   ReduxDispatchEvent,
+  NetworkEvent,
 } from './events.js';
 export { FocusableView, type FocusableViewProps } from './FocusableView.js';
-export { normalizeUrl, type NormalizeUrlOptions } from './network.js';
+export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
 
 export interface InstallOptions {
   // Once the buffer reaches this size, the oldest event is dropped for each new one recorded
@@ -25,6 +26,14 @@ export interface SessionTelemetryApi {
   mark(name: string): void;
   recordFocus(targetId: string): void;
   recordDispatch(actionType: string, durationMs: number): void;
+  recordNetworkRequest(
+    method: string,
+    url: string,
+    status: number,
+    durationMs: number,
+    requestBytes: number | null,
+    responseBytes: number | null,
+  ): void;
   // Temporary: exposes the in-memory buffer until a native chunk writer exists (plan.md
   // Week 4 gate). Not part of the stable V1 API surface.
   getBufferedEvents(): readonly SessionTelemetryEvent[];
@@ -123,6 +132,30 @@ function recordDispatch(actionType: string, durationMs: number): void {
   });
 }
 
+function recordNetworkRequest(
+  method: string,
+  url: string,
+  status: number,
+  durationMs: number,
+  requestBytes: number | null,
+  responseBytes: number | null,
+): void {
+  if (!installed) {
+    return;
+  }
+  pushEvent({
+    type: 'network',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    method,
+    url,
+    status,
+    durationMs,
+    requestBytes,
+    responseBytes,
+  });
+}
+
 function getBufferedEvents(): readonly SessionTelemetryEvent[] {
   return buffer;
 }
@@ -137,6 +170,7 @@ export const SessionTelemetry: SessionTelemetryApi = {
   mark,
   recordFocus,
   recordDispatch,
+  recordNetworkRequest,
   getBufferedEvents,
   getDroppedEventCount,
 };

@@ -4,8 +4,8 @@ flowchart TD
     Focus["Focus changes"] --> Timeline
     InteractionMarker["Interaction markers"] --> Timeline
     Redux["Redux dispatches"] --> Timeline
+    Network["Network requests"] --> Timeline
     VisibleUpdate["Visible-update marker<br/>(planned)"] -.-> Timeline
-    Network["Network<br/>(planned)"] -.-> Timeline
     ReactCommit["React commits<br/>(planned)"] -.-> Timeline
     JSStall["JS stalls<br/>(planned)"] -.-> Timeline
     FrameTiming["Android frame timing<br/>(planned)"] -.-> Timeline
