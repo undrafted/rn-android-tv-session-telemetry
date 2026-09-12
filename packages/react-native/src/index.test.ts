@@ -122,6 +122,39 @@ describe('recordDispatch', () => {
   });
 });
 
+describe('bounded buffer', () => {
+  it('evicts the oldest event once maxBufferedEvents is reached', () => {
+    SessionTelemetry.install({ maxBufferedEvents: 2 });
+    SessionTelemetry.mark('one');
+    SessionTelemetry.mark('two');
+    SessionTelemetry.mark('three');
+
+    const events = SessionTelemetry.getBufferedEvents();
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => (event as { name: string }).name)).toEqual(['two', 'three']);
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(1);
+  });
+
+  it('resets droppedEventCount on a fresh install', () => {
+    SessionTelemetry.install({ maxBufferedEvents: 1 });
+    SessionTelemetry.mark('one');
+    SessionTelemetry.mark('two');
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(1);
+
+    SessionTelemetry.install({ maxBufferedEvents: 1 });
+
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(0);
+  });
+
+  it('clamps a non-positive maxBufferedEvents to at least 1', () => {
+    SessionTelemetry.install({ maxBufferedEvents: 0 });
+    SessionTelemetry.mark('one');
+    SessionTelemetry.mark('two');
+
+    expect(SessionTelemetry.getBufferedEvents()).toHaveLength(1);
+  });
+});
+
 describe('sequence numbers', () => {
   it('increase monotonically across mixed event types', () => {
     SessionTelemetry.install();
