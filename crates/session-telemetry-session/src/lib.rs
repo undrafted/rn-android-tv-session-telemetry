@@ -4,4 +4,4 @@ mod chunk;
 mod rotation;
 
 pub use chunk::{Chunk, ChunkError, ChunkManifest, ChunkWriter, SCHEMA_VERSION};
-pub use rotation::{RotatingChunkWriter, RotationPolicy};
+pub use rotation::{PushOutcome, RotatingChunkWriter, RotationPolicy};

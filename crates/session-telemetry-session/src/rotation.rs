@@ -9,6 +9,17 @@ pub struct RotationPolicy {
     pub max_duration_ms: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushOutcome {
+    Recorded,
+    /// The total-storage budget is exhausted; this event was rejected and the writer will
+    /// reject every subsequent one too. Plan.md section 5: "When the configured disk budget is
+    /// reached, V1 stops recording cleanly and seals the session. It does not silently
+    /// overwrite earlier evidence." Everything accepted before this point is untouched and
+    /// still retrievable via `finish()`.
+    BudgetExceeded,
+}
+
 /// Wraps `ChunkWriter` with rotation, so a long QA capture produces many independently
 /// decodable chunks instead of one `ChunkWriter` accumulating every event in memory for the
 /// whole session — the same unbounded-growth problem the JS library's event buffer had before
@@ -20,6 +31,9 @@ pub struct RotatingChunkWriter {
     current_encoded_size_bytes: usize,
     current_start_timestamp: Option<f64>,
     sealed: Vec<Chunk>,
+    budget_bytes: Option<usize>,
+    total_encoded_size_bytes: usize,
+    stopped: bool,
 }
 
 impl RotatingChunkWriter {
@@ -30,18 +44,50 @@ impl RotatingChunkWriter {
             current_encoded_size_bytes: 0,
             current_start_timestamp: None,
             sealed: Vec::new(),
+            budget_bytes: None,
+            total_encoded_size_bytes: 0,
+            stopped: false,
         }
     }
 
-    pub fn push(&mut self, event: Event) {
+    /// Caps the total encoded size across every chunk this writer produces (sealed and
+    /// in-progress combined) — plan.md section 8.3: "Enforce configured per-session and
+    /// total-storage budgets."
+    pub fn with_budget(mut self, max_total_encoded_size_bytes: usize) -> Self {
+        self.budget_bytes = Some(max_total_encoded_size_bytes);
+        self
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.stopped
+    }
+
+    pub fn total_encoded_size_bytes(&self) -> usize {
+        self.total_encoded_size_bytes
+    }
+
+    pub fn push(&mut self, event: Event) -> PushOutcome {
+        if self.stopped {
+            return PushOutcome::BudgetExceeded;
+        }
+
         // Encoded size of just this one event — an incrementally maintained running total,
         // not re-serializing the whole accumulated chunk on every push.
         let event_size_bytes = serde_json::to_vec(&event).map_or(0, |bytes| bytes.len());
+
+        if let Some(budget) = self.budget_bytes
+            && self.total_encoded_size_bytes + event_size_bytes > budget
+        {
+            self.stopped = true;
+            return PushOutcome::BudgetExceeded;
+        }
+
         let timestamp = event.timestamp();
         let start_timestamp = *self.current_start_timestamp.get_or_insert(timestamp);
 
         self.current.push(event);
         self.current_encoded_size_bytes += event_size_bytes;
+        self.total_encoded_size_bytes += event_size_bytes;
 
         let duration_ms = timestamp - start_timestamp;
         let exceeds_size = self.current_encoded_size_bytes >= self.policy.max_encoded_size_bytes;
@@ -50,6 +96,8 @@ impl RotatingChunkWriter {
         if exceeds_size || exceeds_duration {
             self.rotate();
         }
+
+        PushOutcome::Recorded
     }
 
     fn rotate(&mut self) {
@@ -151,5 +199,53 @@ mod tests {
             let bytes = chunk.encode().unwrap();
             assert_eq!(Chunk::decode(&bytes).unwrap(), chunk);
         }
+    }
+
+    fn writer_without_rotation() -> RotatingChunkWriter {
+        RotatingChunkWriter::new(RotationPolicy {
+            max_encoded_size_bytes: usize::MAX,
+            max_duration_ms: f64::INFINITY,
+        })
+    }
+
+    #[test]
+    fn without_a_budget_every_push_is_recorded() {
+        let mut writer = writer_without_rotation();
+
+        for sequence in 0..5 {
+            assert_eq!(
+                writer.push(event(sequence, sequence as f64)),
+                PushOutcome::Recorded
+            );
+        }
+    }
+
+    #[test]
+    fn stops_recording_once_the_budget_is_exhausted() {
+        let one_event_size = serde_json::to_vec(&event(0, 0.0)).unwrap().len();
+        let mut writer = writer_without_rotation().with_budget(one_event_size * 3);
+
+        for sequence in 0..3 {
+            assert_eq!(
+                writer.push(event(sequence, sequence as f64)),
+                PushOutcome::Recorded
+            );
+        }
+        assert_eq!(writer.push(event(3, 3.0)), PushOutcome::BudgetExceeded);
+        assert!(writer.is_stopped());
+        assert_eq!(writer.total_encoded_size_bytes(), one_event_size * 3);
+    }
+
+    #[test]
+    fn stays_stopped_and_keeps_earlier_evidence_once_the_budget_is_hit() {
+        let one_event_size = serde_json::to_vec(&event(0, 0.0)).unwrap().len();
+        let mut writer = writer_without_rotation().with_budget(one_event_size);
+
+        assert_eq!(writer.push(event(0, 0.0)), PushOutcome::Recorded);
+        assert_eq!(writer.push(event(1, 1.0)), PushOutcome::BudgetExceeded);
+        // Doesn't un-stick even if a later, smaller event would technically still fit.
+        assert_eq!(writer.push(event(2, 2.0)), PushOutcome::BudgetExceeded);
+
+        assert_eq!(chunk_sizes(&writer.finish()), vec![1]);
     }
 }
