@@ -1,0 +1,37 @@
+%%{init: {"theme": "neutral"}}%%
+flowchart LR
+    subgraph Device["Android TV device"]
+        direction TB
+        App["TV app<br/>react-native-tvos"]
+        Lib["Telemetry library<br/>+ Redux middleware"]
+        Buffer["Event buffer"]
+        Collector["Android collector<br/>frame timing · lifecycle · clock sync<br/>(planned)"]
+        Writer["On-device session writer<br/>.rnst chunks<br/>(planned)"]
+        App --> Lib --> Buffer
+        Buffer -.->|native bridge, planned| Collector
+        Collector -.-> Writer
+    end
+
+    subgraph Transport["ADB transport"]
+        direction TB
+        Discover["Device discovery"]
+        LivePull["Live route + pull + verify<br/>(planned)"]
+        Retain["Session retention"]
+        Discover -.-> LivePull
+        LivePull -.-> Retain
+    end
+
+    subgraph Host["Rust host"]
+        direction TB
+        CLI["CLI<br/>doctor · devices · analyze · report<br/>record · stop · status · mark · pull (planned)"]
+        Protocol["Protocol<br/>event schema"]
+        SessionCrate["Session<br/>chunking · rotation · budget · checksums"]
+        Analysis["Analysis<br/>clock mapping · windows · detectors"]
+        Report["Report<br/>JSON + HTML"]
+        CLI --> Protocol --> SessionCrate --> Analysis --> Report
+    end
+
+    App -.-> Discover
+    Writer -.-> LivePull
+    LivePull -.-> CLI
+    Buffer -->|fixture| CLI

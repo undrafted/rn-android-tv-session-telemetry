@@ -1,0 +1,20 @@
+%%{init: {"theme": "neutral"}}%%
+flowchart TD
+    RemoteInput["Remote input"] --> Timeline["Synchronized timeline"]
+    Focus["Focus changes"] --> Timeline
+    InteractionMarker["Interaction markers"] --> Timeline
+    Redux["Redux dispatches"] --> Timeline
+    VisibleUpdate["Visible-update marker<br/>(planned)"] -.-> Timeline
+    Network["Network<br/>(planned)"] -.-> Timeline
+    ReactCommit["React commits<br/>(planned)"] -.-> Timeline
+    JSStall["JS stalls<br/>(planned)"] -.-> Timeline
+    FrameTiming["Android frame timing<br/>(planned)"] -.-> Timeline
+    Bookmarks["QA bookmarks<br/>(planned)"] -.-> Timeline
+    SessionMeta["Session metadata<br/>device · clock mapping · loss counters<br/>(planned)"] -.-> Summary
+
+    Timeline --> Windows["Interaction windows"]
+    Timeline --> Summary["Session summary"]
+    Windows --> Detectors["Detectors"]
+    Detectors --> Findings["Findings"]
+    Findings --> ReportOut["HTML / JSON report"]
+    Summary --> ReportOut
