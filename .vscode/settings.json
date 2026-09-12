@@ -1,0 +1,8 @@
+{
+  // Fixes rust-analyzer "proc macro server error: unsupported metadata version" after
+  // `rustup update stable` outpaces the VSCode extension's bundled proc-macro server — see
+  // docs/development.md. Written for Apple Silicon macOS (this repo's dev machine); on a
+  // different arch/OS, find the right path with `rustc --print sysroot` and adjust the
+  // toolchain triple below.
+  "rust-analyzer.procMacro.server": "${env:HOME}/.rustup/toolchains/stable-aarch64-apple-darwin/libexec/rust-analyzer-proc-macro-srv"
+}
