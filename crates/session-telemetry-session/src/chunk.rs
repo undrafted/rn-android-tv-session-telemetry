@@ -7,6 +7,7 @@ use std::fmt;
 pub const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChunkManifest {
     pub schema_version: u32,
     pub sequence_start: u64,

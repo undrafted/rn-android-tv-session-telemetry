@@ -4,6 +4,7 @@
 
 use clap::{Parser, Subcommand, ValueEnum};
 use session_telemetry_adb::{DeviceInfo, DeviceState};
+use session_telemetry_analysis::{Finding, Severity};
 
 /// Mirrors the CLI usage shown in plan.md section 5. Most subcommands are parsed but not yet
 /// implemented — see `main.rs` for which ones actually do something today.
@@ -36,10 +37,17 @@ pub enum Command {
     /// Stop the active recording.
     Stop,
     /// Analyze a recorded session.
-    Analyze { session: String },
+    Analyze {
+        /// Path to a chunk JSON file. Session-id lookup ("latest", by name) from a sessions
+        /// directory isn't implemented yet — only direct file paths work today.
+        session: String,
+    },
     /// Generate a report for a recorded session.
     Report {
+        /// Path to a chunk JSON file. Session-id lookup ("latest", by name) from a sessions
+        /// directory isn't implemented yet — only direct file paths work today.
         session: String,
+        /// Not implemented yet — no HTML report exists to open.
         #[arg(long)]
         open: bool,
     },
@@ -85,6 +93,34 @@ pub fn format_devices(devices: &[DeviceInfo]) -> String {
                 device.serial,
                 device_state_label(&device.state),
                 label
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Human-readable findings listing for `session-telemetry analyze`. Deliberately plain-text,
+/// not JSON — this is a terminal summary (plan.md section 5's "Terminal summary" deliverable),
+/// distinct from the JSON `session-telemetry-report` output.
+pub fn format_findings(findings: &[Finding]) -> String {
+    if findings.is_empty() {
+        return "No findings.".to_string();
+    }
+
+    findings
+        .iter()
+        .map(|finding| {
+            let severity = match finding.severity {
+                Severity::Warning => "warning",
+                Severity::Critical => "critical",
+            };
+            format!(
+                "[{severity}] {} (v{}): sequence {}-{}, {:.1}ms",
+                finding.detector,
+                finding.detector_version,
+                finding.sequence_start,
+                finding.sequence_end,
+                finding.latency_ms
             )
         })
         .collect::<Vec<_>>()
@@ -149,6 +185,28 @@ mod tests {
         assert_eq!(
             format_devices(&devices),
             "emulator-5554\toffline\tunknown model"
+        );
+    }
+
+    #[test]
+    fn format_findings_reports_no_findings() {
+        assert_eq!(format_findings(&[]), "No findings.");
+    }
+
+    #[test]
+    fn format_findings_includes_detector_severity_and_range() {
+        let findings = vec![Finding {
+            detector: "high-latency-focus-change",
+            detector_version: 1,
+            severity: Severity::Warning,
+            sequence_start: 3,
+            sequence_end: 7,
+            latency_ms: 214.0,
+        }];
+
+        assert_eq!(
+            format_findings(&findings),
+            "[warning] high-latency-focus-change (v1): sequence 3-7, 214.0ms"
         );
     }
 }

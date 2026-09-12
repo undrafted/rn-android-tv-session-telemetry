@@ -1,0 +1,67 @@
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "sequenceStart": 0,
+    "sequenceEnd": 7,
+    "timestampStart": 0.0,
+    "timestampEnd": 714.0,
+    "eventCount": 8,
+    "lossCount": 0,
+    "checksum": 568627439
+  },
+  "events": [
+    {
+      "type": "remote-input",
+      "sequence": 0,
+      "timestamp": 0.0,
+      "key": "up"
+    },
+    {
+      "type": "redux-dispatch",
+      "sequence": 1,
+      "timestamp": 2.0,
+      "actionType": "nav/moveUp",
+      "durationMs": 0.8
+    },
+    {
+      "type": "focus",
+      "sequence": 2,
+      "timestamp": 18.0,
+      "targetId": "card-0",
+      "previousTargetId": "card-1"
+    },
+    {
+      "type": "remote-input",
+      "sequence": 3,
+      "timestamp": 500.0,
+      "key": "right"
+    },
+    {
+      "type": "redux-dispatch",
+      "sequence": 4,
+      "timestamp": 504.0,
+      "actionType": "catalog/itemFocused",
+      "durationMs": 1.2
+    },
+    {
+      "type": "interaction-marker",
+      "sequence": 5,
+      "timestamp": 510.0,
+      "name": "demo:card-select"
+    },
+    {
+      "type": "redux-dispatch",
+      "sequence": 6,
+      "timestamp": 610.0,
+      "actionType": "catalog/itemLoaded",
+      "durationMs": 2.5
+    },
+    {
+      "type": "focus",
+      "sequence": 7,
+      "timestamp": 714.0,
+      "targetId": "card-2",
+      "previousTargetId": "card-0"
+    }
+  ]
+}

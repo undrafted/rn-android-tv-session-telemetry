@@ -224,6 +224,9 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "session-telemetry-adb",
+ "session-telemetry-analysis",
+ "session-telemetry-report",
+ "session-telemetry-session",
 ]
 
 [[package]]
