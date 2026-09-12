@@ -1,10 +1,11 @@
 use clap::Parser;
 use session_telemetry_adb::parse_devices_output;
 use session_telemetry_analysis::{
-    build_interaction_windows, detect_high_latency_focus_changes, detect_repeated_redux_dispatches,
+    Finding, build_interaction_windows, detect_high_latency_focus_changes,
+    detect_repeated_redux_dispatches,
 };
-use session_telemetry_cli::{Cli, Command, format_devices, format_findings};
-use session_telemetry_report::SessionSummary;
+use session_telemetry_cli::{Cli, Command, format_devices, format_findings, opener_command};
+use session_telemetry_report::{SessionSummary, render_html};
 use session_telemetry_session::Chunk;
 use std::process::{Command as ProcessCommand, exit};
 
@@ -62,20 +63,24 @@ fn load_chunk(session: &str) -> Chunk {
     })
 }
 
-fn run_analyze(session: &str) {
-    let chunk = load_chunk(session);
+fn collect_findings(chunk: &Chunk) -> Vec<Finding> {
     let windows = build_interaction_windows(&chunk.events);
 
     let mut findings = detect_high_latency_focus_changes(&windows);
     findings.extend(detect_repeated_redux_dispatches(&windows));
     findings.sort_by_key(|finding| finding.sequence_start);
+    findings
+}
 
-    println!("{}", format_findings(&findings));
+fn run_analyze(session: &str) {
+    let chunk = load_chunk(session);
+    println!("{}", format_findings(&collect_findings(&chunk)));
 }
 
 fn run_report(session: &str, open: bool) {
     let chunk = load_chunk(session);
     let summary = SessionSummary::from_events(&chunk.events);
+    let findings = collect_findings(&chunk);
 
     match summary.to_json() {
         Ok(json) => println!("{json}"),
@@ -85,7 +90,19 @@ fn run_report(session: &str, open: bool) {
         }
     }
 
-    if open {
-        eprintln!("--open is not implemented yet — no HTML report exists to open.");
+    let html_path = format!("{session}.html");
+    let html = render_html(&summary, &findings);
+    if let Err(err) = std::fs::write(&html_path, html) {
+        eprintln!("could not write HTML report to {html_path}: {err}");
+        exit(1);
+    }
+    println!("HTML report written to {html_path}");
+
+    if open
+        && let Err(err) = ProcessCommand::new(opener_command())
+            .arg(&html_path)
+            .status()
+    {
+        eprintln!("could not open {html_path}: {err}");
     }
 }

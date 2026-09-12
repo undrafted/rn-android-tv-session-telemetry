@@ -128,6 +128,20 @@ pub fn format_findings(findings: &[Finding]) -> String {
         .join("\n")
 }
 
+/// The OS command that opens a file with its default application, for `report --open`. Kept
+/// separate from the actual `Command::new(...).status()` call (in main.rs) so the platform
+/// selection is unit testable without spawning a real process — which, for this command
+/// specifically, would pop open a browser window as a side effect of running the test suite.
+pub fn opener_command() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "start"
+    } else {
+        "xdg-open"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,5 +224,18 @@ mod tests {
             format_findings(&findings),
             "[warning] high-latency-focus-change (v1): sequence 3-7, 214 ms"
         );
+    }
+
+    #[test]
+    fn opener_command_matches_this_platform() {
+        let expected = if cfg!(target_os = "macos") {
+            "open"
+        } else if cfg!(target_os = "windows") {
+            "start"
+        } else {
+            "xdg-open"
+        };
+
+        assert_eq!(opener_command(), expected);
     }
 }
