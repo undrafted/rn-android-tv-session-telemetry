@@ -3,7 +3,10 @@ use session_telemetry_adb::{
     DeviceState, parse_devices_output, parse_find_output, resolve_session_dir,
 };
 use session_telemetry_analysis::{
-    Finding, build_interaction_windows, detect_high_latency_focus_changes,
+    Finding, build_interaction_windows, detect_excessive_commits_during_rapid_focus_movement,
+    detect_high_latency_focus_changes, detect_js_stalls_overlapping_interactions,
+    detect_network_completions_followed_by_commits,
+    detect_react_commits_overlapping_delayed_frames, detect_repeated_network_requests,
     detect_repeated_redux_dispatches,
 };
 use session_telemetry_cli::{
@@ -275,6 +278,13 @@ fn collect_findings(chunk: &Chunk) -> Vec<Finding> {
 
     let mut findings = detect_high_latency_focus_changes(&windows);
     findings.extend(detect_repeated_redux_dispatches(&windows));
+    findings.extend(detect_js_stalls_overlapping_interactions(&windows));
+    findings.extend(detect_repeated_network_requests(&windows));
+    findings.extend(detect_react_commits_overlapping_delayed_frames(&windows));
+    findings.extend(detect_network_completions_followed_by_commits(&windows));
+    findings.extend(detect_excessive_commits_during_rapid_focus_movement(
+        &windows,
+    ));
     findings.sort_by_key(|finding| finding.sequence_start);
     findings
 }
