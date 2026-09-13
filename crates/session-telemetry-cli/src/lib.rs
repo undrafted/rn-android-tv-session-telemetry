@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use session_telemetry_adb::{DeviceInfo, DeviceState};
 use session_telemetry_analysis::{Finding, Severity};
+use std::time::SystemTime;
 
 /// Most subcommands are parsed but not yet implemented — see `main.rs` for which ones actually
 /// do something today.
@@ -39,14 +40,16 @@ pub enum Command {
     Stop,
     /// Analyze a recorded session.
     Analyze {
-        /// Path to a chunk JSON file. Session-id lookup ("latest", by name) from a sessions
-        /// directory isn't implemented yet — only direct file paths work today.
+        /// Path to a chunk JSON file, or "latest" for the most recently pulled one (by file
+        /// modification time, under ./pulled-sessions/). Named lookup by session name isn't
+        /// implemented yet — only a direct path or "latest" work today.
         session: String,
     },
     /// Generate a report for a recorded session.
     Report {
-        /// Path to a chunk JSON file. Session-id lookup ("latest", by name) from a sessions
-        /// directory isn't implemented yet — only direct file paths work today.
+        /// Path to a chunk JSON file, or "latest" for the most recently pulled one (by file
+        /// modification time, under ./pulled-sessions/). Named lookup by session name isn't
+        /// implemented yet — only a direct path or "latest" work today.
         session: String,
         /// Not implemented yet — no HTML report exists to open.
         #[arg(long)]
@@ -231,9 +234,21 @@ pub fn opener_command() -> &'static str {
     }
 }
 
+/// Given candidate session chunk files (path + a recency indicator, e.g. file modification
+/// time), returns the most recent one's path — the "latest" resolution for `analyze`/`report`.
+/// `None` if `candidates` is empty. Pure decision logic, same split as
+/// `session_telemetry_adb::sessions_to_prune` vs. the real directory walk around it in main.rs.
+pub fn resolve_latest_session_file(candidates: &[(String, SystemTime)]) -> Option<&str> {
+    candidates
+        .iter()
+        .max_by_key(|(_, modified)| *modified)
+        .map(|(path, _)| path.as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn parses_devices_subcommand() {
@@ -422,5 +437,34 @@ mod tests {
         };
 
         assert_eq!(opener_command(), expected);
+    }
+
+    #[test]
+    fn resolve_latest_session_file_picks_the_most_recently_modified() {
+        let base = SystemTime::UNIX_EPOCH;
+        let candidates = vec![
+            (
+                "pulled-sessions/a/chunk-00000.rnst".to_string(),
+                base + Duration::from_secs(1),
+            ),
+            (
+                "pulled-sessions/b/chunk-00000.rnst".to_string(),
+                base + Duration::from_secs(3),
+            ),
+            (
+                "pulled-sessions/c/chunk-00000.rnst".to_string(),
+                base + Duration::from_secs(2),
+            ),
+        ];
+
+        assert_eq!(
+            resolve_latest_session_file(&candidates),
+            Some("pulled-sessions/b/chunk-00000.rnst")
+        );
+    }
+
+    #[test]
+    fn resolve_latest_session_file_returns_none_when_nothing_was_pulled() {
+        assert_eq!(resolve_latest_session_file(&[]), None);
     }
 }

@@ -11,11 +11,11 @@ use session_telemetry_analysis::{
 };
 use session_telemetry_cli::{
     Cli, Command, RecordMode, SessionState, format_devices, format_findings, format_record_started,
-    format_status, format_stop_summary, opener_command,
+    format_status, format_stop_summary, opener_command, resolve_latest_session_file,
 };
 use session_telemetry_report::{SessionSummary, render_html};
 use session_telemetry_session::Chunk;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, exit};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -259,8 +259,56 @@ fn run_pull(session: &str, device: &str, package: &str, out: Option<String>) {
     println!("Pulled {pulled_count} chunk(s) from {session_name} into {out_dir}/");
 }
 
-/// `session` is a path to a chunk JSON file for now — see the `Analyze`/`Report` doc comments
-/// in lib.rs for why "latest"/named lookup isn't implemented yet.
+const PULLED_SESSIONS_DIR: &str = "pulled-sessions";
+
+/// Recursively collects every `.rnst` file under `dir` with its modification time — the
+/// candidate pool `resolve_latest_session_file` picks from. Missing/unreadable entries are
+/// skipped rather than failing the whole walk, since `PULLED_SESSIONS_DIR` may not exist yet
+/// (nothing pulled) or a single file may be mid-write.
+fn collect_rnst_files(dir: &Path, candidates: &mut Vec<(String, std::time::SystemTime)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rnst_files(&path, candidates);
+            continue;
+        }
+        if path.extension().is_none_or(|ext| ext != "rnst") {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        candidates.push((path.to_string_lossy().into_owned(), modified));
+    }
+}
+
+/// Resolves `session` to an actual chunk file path: passed through unchanged unless it's the
+/// literal string "latest", in which case it becomes the most recently modified `.rnst` file
+/// under `./pulled-sessions/` (where `pull` writes by default).
+fn resolve_session_path(session: &str) -> String {
+    if session != "latest" {
+        return session.to_string();
+    }
+
+    let mut candidates = Vec::new();
+    collect_rnst_files(Path::new(PULLED_SESSIONS_DIR), &mut candidates);
+
+    resolve_latest_session_file(&candidates)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            eprintln!(
+                "No pulled sessions found under {PULLED_SESSIONS_DIR}/. Run `session-telemetry pull` first, or pass a direct file path."
+            );
+            exit(1);
+        })
+}
+
 fn load_chunk(session: &str) -> Chunk {
     let bytes = std::fs::read(session).unwrap_or_else(|err| {
         eprintln!("could not read {session}: {err}");
@@ -290,12 +338,14 @@ fn collect_findings(chunk: &Chunk) -> Vec<Finding> {
 }
 
 fn run_analyze(session: &str) {
-    let chunk = load_chunk(session);
+    let session = resolve_session_path(session);
+    let chunk = load_chunk(&session);
     println!("{}", format_findings(&collect_findings(&chunk)));
 }
 
 fn run_report(session: &str, open: bool) {
-    let chunk = load_chunk(session);
+    let session = resolve_session_path(session);
+    let chunk = load_chunk(&session);
     let summary = SessionSummary::from_events(&chunk.events);
     let findings = collect_findings(&chunk);
 
