@@ -1,9 +1,11 @@
 //! Clock mapping, interaction windows, metrics, and deterministic detectors.
 
+mod bookmark;
 mod clock;
 mod detector;
 mod interaction;
 
+pub use bookmark::{QaBookmark, create_bookmark};
 pub use clock::{ClockMap, ClockSyncSample};
 pub use detector::{
     Finding, HIGH_LATENCY_FOCUS_CHANGE_DETECTOR, HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION,
