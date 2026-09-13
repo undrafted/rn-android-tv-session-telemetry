@@ -27,7 +27,7 @@ export type {
 export { startGlobalFocusMonitor } from './globalFocus.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
 export { startStallMonitor, type StallMonitorOptions } from './stall.js';
-export { onProfilerRender } from './profiler.js';
+export { onProfilerRender, withTelemetryRoot } from './profiler.js';
 export { startFrameTimingMonitor, type FrameTimingMonitorOptions } from './frameTiming.js';
 
 export interface InstallOptions {

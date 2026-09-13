@@ -14,14 +14,11 @@
  * @format
  */
 
-import { Profiler, useState } from 'react';
+import { useState } from 'react';
 import { loadNetworkScenario } from './networkScenario';
 import { runStallScenario } from './stallScenario';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import {
-  SessionTelemetry,
-  onProfilerRender,
-} from '@rn-session-telemetry/react-native';
+import { SessionTelemetry } from '@rn-session-telemetry/react-native';
 import {
   selectItemCount,
   selectVisibleItemIds,
@@ -99,20 +96,49 @@ function StallCard({ blocking }: { blocking: boolean }) {
   );
 }
 
+function CommitCard({ slow }: { slow: boolean }) {
+  const [count, setCount] = useState(0);
+  const [focused, setFocused] = useState(false);
+  // Deliberately expensive render work, compared with an ordinary state update beside it.
+  // The root profiler measures this automatically; the component has no telemetry calls.
+  if (slow && count > 0) {
+    const end = performance.now() + 40;
+    while (performance.now() < end) {
+      // Keep this render busy for the pathological fixture case.
+    }
+  }
+  return (
+    <Pressable
+      nativeID={slow ? 'commit-slow' : 'commit-fast'}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPress={() => setCount(value => value + 1)}
+      style={[styles.card, focused && styles.cardFocused]}
+    >
+      <Text style={styles.label}>
+        {slow ? 'Slow render · 40ms' : 'Fast render'}
+      </Text>
+      <Text style={styles.detail}>Updates: {count}</Text>
+    </Pressable>
+  );
+}
+
 function App() {
   return (
-    <Profiler id="App" onRender={onProfilerRender}>
-      <View style={styles.container}>
-        <View style={styles.row}>
-          <Card id="card-1" label="Load twice" hasTVPreferredFocus />
-          <Card id="card-2" label="Load once" />
-        </View>
-        <View style={styles.row}>
-          <StallCard blocking />
-          <StallCard blocking={false} />
-        </View>
+    <View style={styles.container}>
+      <View style={styles.row}>
+        <Card id="card-1" label="Load twice" hasTVPreferredFocus />
+        <Card id="card-2" label="Load once" />
       </View>
-    </Profiler>
+      <View style={styles.row}>
+        <StallCard blocking />
+        <StallCard blocking={false} />
+      </View>
+      <View style={styles.row}>
+        <CommitCard slow />
+        <CommitCard slow={false} />
+      </View>
+    </View>
   );
 }
 

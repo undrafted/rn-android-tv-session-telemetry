@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "summary": {
     "eventCount": 2,
     "remoteInputCount": 1,
@@ -20,6 +20,7 @@
     "timestampStart": 0.0,
     "timestampEnd": 214.0
   },
+  "reactCommitCapture": "unavailable-or-not-observed",
   "clockUncertaintyMs": 0.0,
   "deviceMetadata": null,
   "findings": [

@@ -21,6 +21,7 @@ pub fn render_html(report: &Report) -> String {
 <body>
 <h1>Session summary</h1>
 {summary_html}
+{react_capture_html}
 <h1>Findings</h1>
 {findings_html}
 {selectors_html}
@@ -35,6 +36,11 @@ pub fn render_html(report: &Report) -> String {
             report.clock_uncertainty_ms,
             report.device_metadata
         ),
+        react_capture_html = if report.react_commit_capture == "observed" {
+            "<p>React capture observed. Durations measure render work for committed subtrees, not commit-phase or screen-presentation time. Profiling adds overhead.</p>"
+        } else {
+            "<p>React capture unavailable or not observed. Zero recorded commits is not a measurement of zero React work: profiling may be unsupported, the root may be unwrapped, or no profiled commit occurred during capture.</p>"
+        },
         findings_html = render_findings(&report.findings),
         selectors_html = render_selector_stats(&report.selector_stats),
         bookmarks_html = render_bookmarks(report.bookmarks),

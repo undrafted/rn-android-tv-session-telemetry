@@ -8,7 +8,7 @@ use session_telemetry_protocol::{Event, SessionMetadataEvent};
 /// Bumped when the report document's own shape changes (distinct from `ChunkManifest`'s
 /// `SCHEMA_VERSION`, which versions the on-disk session format, not this derived document) —
 /// lets a downstream consumer decide whether it can parse a given report directly.
-pub const REPORT_SCHEMA_VERSION: u32 = 1;
+pub const REPORT_SCHEMA_VERSION: u32 = 2;
 
 /// A finding plus the raw events between its `sequence_start`/`sequence_end`, sorted by
 /// sequence — self-contained evidence a JSON consumer can read without also fetching the full
@@ -27,6 +27,9 @@ pub struct FindingWithEvidence<'a> {
 pub struct Report<'a> {
     pub schema_version: u32,
     pub summary: &'a SessionSummary,
+    /// A missing callback cannot distinguish unsupported profiling, an unwrapped root,
+    /// inactive capture, or no commits in this recording. Never interpret it as zero work.
+    pub react_commit_capture: &'static str,
     /// `ClockMap::uncertainty_ms` at report time, or `None` when the session had no clock-sync
     /// samples to fit a map from (see `main.rs::load_mapped_bookmarks` for the same check).
     pub clock_uncertainty_ms: Option<f64>,
@@ -59,6 +62,11 @@ impl<'a> Report<'a> {
         Report {
             schema_version: REPORT_SCHEMA_VERSION,
             summary,
+            react_commit_capture: if summary.react_commit_count > 0 {
+                "observed"
+            } else {
+                "unavailable-or-not-observed"
+            },
             clock_uncertainty_ms,
             device_metadata: session_metadata_from_events(events),
             findings: findings
@@ -138,6 +146,46 @@ mod tests {
     }
 
     #[test]
+    fn missing_commits_disclose_unknown_capture_in_json_and_html() {
+        let summary = SessionSummary::from_events(&[]);
+        let report = Report::new(&summary, &[], &[], &[], None);
+        assert_eq!(report.react_commit_capture, "unavailable-or-not-observed");
+        assert!(
+            report
+                .to_json()
+                .unwrap()
+                .contains("unavailable-or-not-observed")
+        );
+        assert!(crate::render_html(&report).contains("not a measurement of zero React work"));
+    }
+
+    #[test]
+    fn real_commit_events_disclose_observed_capture_and_render_work_semantics() {
+        let events = vec![Event::ReactCommit(
+            session_telemetry_protocol::ReactCommitEvent {
+                sequence: 1,
+                timestamp: 50.0,
+                profiler_id: "App".to_string(),
+                phase: session_telemetry_protocol::ReactCommitPhase::Mount,
+                actual_duration_ms: 20.0,
+                base_duration_ms: 25.0,
+            },
+        )];
+        let summary = SessionSummary::from_events(&events);
+        let report = Report::new(&summary, &[], &events, &[], None);
+        assert_eq!(report.react_commit_capture, "observed");
+        assert!(
+            report
+                .to_json()
+                .unwrap()
+                .contains("\"reactCommitCapture\": \"observed\"")
+        );
+        assert!(
+            crate::render_html(&report).contains("not commit-phase or screen-presentation time")
+        );
+    }
+
+    #[test]
     fn attaches_evidence_events_within_a_findings_sequence_range() {
         let events = sample_events();
         let findings = vec![sample_finding()];
@@ -160,7 +208,7 @@ mod tests {
         let json = report.to_json().unwrap();
 
         assert_eq!(report.events.len(), 2);
-        assert!(json.contains("\"schemaVersion\": 1"));
+        assert!(json.contains("\"schemaVersion\": 2"));
         assert!(!json.contains("\"remote-input\""));
     }
 

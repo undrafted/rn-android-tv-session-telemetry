@@ -1,5 +1,8 @@
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 const path = require('path');
+const {
+  withReactProfiling,
+} = require('@rn-session-telemetry/react-native/metro.cjs');
 
 // This is an npm workspace, so hoisted dependencies (@babel/runtime included) live in the
 // monorepo root's node_modules, not this app's own - Metro's default config only looks in the
@@ -34,7 +37,10 @@ const duplicateReactNativePaths = [
   path.join(workspaceRoot, 'packages/react-native/node_modules/react-native'),
   path.join(projectRoot, 'node_modules/react-native/node_modules/react-native'),
 ];
-const canonicalReactNative = path.resolve(projectRoot, 'node_modules/react-native');
+const canonicalReactNative = path.resolve(
+  projectRoot,
+  'node_modules/react-native',
+);
 
 /**
  * Metro configuration
@@ -50,7 +56,7 @@ const config = {
       path.resolve(workspaceRoot, 'node_modules'),
     ],
     blockList: duplicateReactNativePaths.map(
-      (blockedPath) => new RegExp(`^${escapeRegExp(blockedPath)}/.*$`),
+      blockedPath => new RegExp(`^${escapeRegExp(blockedPath)}/.*$`),
     ),
     resolveRequest: (context, moduleName, platform) => {
       if (moduleName === 'react-native') {
@@ -61,4 +67,10 @@ const config = {
   },
 };
 
-module.exports = mergeConfig(getDefaultConfig(projectRoot), config);
+module.exports = withReactProfiling(
+  mergeConfig(getDefaultConfig(projectRoot), config),
+  {
+    enabled: process.env.RNST_PROFILING === '1',
+    reactNativePath: canonicalReactNative,
+  },
+);

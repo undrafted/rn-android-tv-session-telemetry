@@ -7,6 +7,7 @@ import {
   SessionTelemetry,
   startFrameTimingMonitor,
   startGlobalFocusMonitor,
+  withTelemetryRoot,
 } from '@rn-session-telemetry/react-native';
 import { runOverheadBenchmark } from './benchmark';
 import App from './App';
@@ -38,4 +39,7 @@ if (__RN_SESSION_TELEMETRY_ENABLED__) {
   }
 }
 
-AppRegistry.registerComponent(appName, () => App);
+const Root = __RN_SESSION_TELEMETRY_ENABLED__
+  ? withTelemetryRoot(App, appName)
+  : App;
+AppRegistry.registerComponent(appName, () => Root);
