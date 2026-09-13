@@ -5,9 +5,11 @@ flowchart LR
         App["TV app<br/>react-native-tvos"]
         Lib["Telemetry library<br/>+ Redux middleware"]
         Buffer["Event buffer"]
-        Collector["Android collector<br/>frame timing · lifecycle · clock sync<br/>(planned)"]
+        FrameTiming["Native frame timing<br/>FrameMetrics"]
+        Collector["Android collector<br/>lifecycle · clock sync<br/>(planned)"]
         Writer["On-device session writer<br/>.rnst chunks<br/>(planned)"]
         App --> Lib --> Buffer
+        FrameTiming --> Buffer
         Buffer -.->|native bridge, planned| Collector
         Collector -.-> Writer
     end
