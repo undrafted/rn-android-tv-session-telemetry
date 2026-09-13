@@ -5,14 +5,15 @@ use session_telemetry_analysis::{
 };
 use session_telemetry_protocol::{Event, SessionMetadataEvent};
 
-/// A finding plus the raw events between its `sequence_start`/`sequence_end`, sorted by
-/// sequence — self-contained evidence a JSON consumer can read without also fetching the full
-/// session.
+/// Finding sequence bounds reference the shared event table. HTML retains a bounded preview.
 #[derive(Debug, Clone, Serialize)]
 pub struct FindingWithEvidence<'a> {
     #[serde(flatten)]
     pub finding: &'a Finding,
+    #[serde(skip)]
     pub evidence: Vec<&'a Event>,
+    #[serde(skip)]
+    pub evidence_count: usize,
 }
 
 /// The single structured model both the JSON export and the HTML report render from — a script
@@ -32,17 +33,10 @@ pub struct Report<'a> {
     /// library version, not an error.
     pub device_metadata: Option<&'a SessionMetadataEvent>,
     pub findings: Vec<FindingWithEvidence<'a>>,
-    /// Per-selector aggregate stats across the whole session — see `SelectorStats`'s own doc
-    /// comment. Empty when no selector was instrumented, not an error.
     pub react_summary: crate::ReactSummary,
     pub selector_stats: Vec<SelectorStats>,
     pub bookmarks: &'a [QaBookmark],
-    /// The full raw session, kept off the wire (`#[serde(skip)]`) so the JSON document stays
-    /// bounded regardless of session length — consistent with this codebase's summary-first
-    /// principle elsewhere (windowed timeline rendering, capped HTML timeline). Only used by
-    /// `render_html`'s full session timeline; every finding's own evidence is already carried by
-    /// `findings` above.
-    #[serde(skip)]
+    /// Shared event table; findings reference inclusive sequence ranges.
     pub events: &'a [Event],
 }
 
@@ -54,6 +48,8 @@ impl<'a> Report<'a> {
         bookmarks: &'a [QaBookmark],
         clock_uncertainty_ms: Option<f64>,
     ) -> Report<'a> {
+        let mut sorted: Vec<&Event> = events.iter().collect();
+        sorted.sort_by_key(|event| event.sequence());
         Report {
             summary,
             react_commit_capture: if summary.react_commit_count > 0 {
@@ -65,9 +61,21 @@ impl<'a> Report<'a> {
             device_metadata: session_metadata_from_events(events),
             findings: findings
                 .iter()
-                .map(|finding| FindingWithEvidence {
-                    finding,
-                    evidence: evidence_for(finding, events),
+                .enumerate()
+                .map(|(index, finding)| {
+                    let start = sorted.partition_point(|e| e.sequence() < finding.sequence_start);
+                    let end = sorted
+                        .partition_point(|e| e.sequence() <= finding.sequence_end)
+                        .max(start);
+                    FindingWithEvidence {
+                        finding,
+                        evidence_count: end - start,
+                        evidence: if index < 100 {
+                            sorted[start..end].iter().take(20).copied().collect()
+                        } else {
+                            Vec::new()
+                        },
+                    }
                 })
                 .collect(),
             selector_stats: selector_stats(events),
@@ -77,24 +85,10 @@ impl<'a> Report<'a> {
         }
     }
 
+    /// In-memory complete JSON for small consumers. CLI exports use write_report_bundle.
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
-}
-
-/// The events between a finding's `sequence_start` and `sequence_end`, sorted by sequence —
-/// shared by the JSON report and the HTML evidence timeline so both derive the same evidence
-/// from the same finding, rather than filtering events twice.
-pub(crate) fn evidence_for<'a>(finding: &Finding, events: &'a [Event]) -> Vec<&'a Event> {
-    let mut window_events: Vec<&Event> = events
-        .iter()
-        .filter(|event| {
-            let sequence = event.sequence();
-            sequence >= finding.sequence_start && sequence <= finding.sequence_end
-        })
-        .collect();
-    window_events.sort_by_key(|event| event.sequence());
-    window_events
 }
 
 #[cfg(test)]
@@ -206,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_events_are_carried_but_not_serialized() {
+    fn raw_events_are_serialized_once() {
         let events = sample_events();
         let summary = SessionSummary::from_events(&events);
 
@@ -215,7 +209,7 @@ mod tests {
 
         assert_eq!(report.events.len(), 2);
         assert!(!json.contains("schemaVersion"));
-        assert!(!json.contains("\"remote-input\""));
+        assert!(json.contains("\"remote-input\""));
     }
 
     #[test]

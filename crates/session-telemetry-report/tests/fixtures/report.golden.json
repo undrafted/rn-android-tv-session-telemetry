@@ -37,22 +37,7 @@
           "value": 100.0
         }
       ],
-      "summary": "Input-to-focus-change latency was 214ms.",
-      "evidence": [
-        {
-          "type": "remote-input",
-          "sequence": 0,
-          "timestamp": 0.0,
-          "key": "right"
-        },
-        {
-          "type": "focus",
-          "sequence": 1,
-          "timestamp": 214.0,
-          "targetId": "card-2",
-          "previousTargetId": null
-        }
-      ]
+      "summary": "Input-to-focus-change latency was 214ms."
     }
   ],
   "reactSummary": {
@@ -75,6 +60,21 @@
       "sessionTimestamp": 100.0,
       "uncertaintyMs": 0.0,
       "label": "carousel stopped responding"
+    }
+  ],
+  "events": [
+    {
+      "type": "remote-input",
+      "sequence": 0,
+      "timestamp": 0.0,
+      "key": "right"
+    },
+    {
+      "type": "focus",
+      "sequence": 1,
+      "timestamp": 214.0,
+      "targetId": "card-2",
+      "previousTargetId": null
     }
   ]
 }

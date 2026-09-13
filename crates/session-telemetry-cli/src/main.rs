@@ -18,7 +18,7 @@ use session_telemetry_cli::{
     format_record_started, format_status, format_stop_summary, format_watch_line, opener_command,
     resolve_latest_session_file,
 };
-use session_telemetry_report::{Report, SessionSummary, render_html};
+use session_telemetry_report::{Report, SessionSummary, render_html, write_report_bundle};
 use session_telemetry_session::Chunk;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, exit};
@@ -644,25 +644,22 @@ fn run_report(session: &str, open: bool, format: ReportFormat) {
         clock_uncertainty_ms,
     );
 
-    if format == ReportFormat::Json {
-        match report.to_json() {
-            Ok(json) => {
-                let json_path = format!("{session}.json");
-                if let Err(err) = std::fs::write(&json_path, json) {
-                    eprintln!("could not write JSON report to {json_path}: {err}");
-                    exit(1);
-                }
-                println!("JSON report written to {json_path}");
-            }
-            Err(err) => {
-                eprintln!("could not generate report: {err}");
-                exit(1);
-            }
-        }
+    let json_path = format!("{session}.json");
+    if let Err(err) = write_report_bundle(&report, Path::new(&json_path)) {
+        eprintln!("could not write report bundle: {err}");
+        exit(1);
     }
+    println!("JSON report index written to {json_path}");
+    let _ = format; // Both formats retain complete detail in paged JSON.
 
     let html_path = format!("{session}.html");
-    let html = render_html(&report);
+    let json_name = Path::new(&json_path).file_name().unwrap().to_string_lossy();
+    let href: String = json_name
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect();
+    let html = render_html(&report).replacen("<h1>Session summary</h1>", &format!("<p><a href=\"{href}\">Complete JSON index and detail pages</a>. Keep the index and its pages directory together.</p><h1>Session summary</h1>"), 1);
     if let Err(err) = std::fs::write(&html_path, html) {
         eprintln!("could not write HTML report to {html_path}: {err}");
         exit(1);

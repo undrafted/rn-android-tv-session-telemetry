@@ -67,7 +67,27 @@ All signals below are exercised by the TV fixture.
 | `reactSummary.byProfiler`   | Session commit count, valid-duration count, total render work, and longest render, grouped by profiler ID. Nested profiler totals can overlap.                                          |
 | `reactSummary.interactions` | The same metrics for each input window, ending at the first visible update or next input. Commits outside these windows still count in profiler totals. Association is not attribution. |
 | Missing durations           | Negative and non-finite durations are excluded from work totals. Totals are null when no valid durations were recorded.                                                                 |
-| HTML                        | Shows the first 200 interaction summaries; JSON contains all of them. Elapsed render-to-commit intervals are not summed.                                                                |
+| HTML                        | Shows the first 200 interaction summaries; JSON interaction pages contain all of them. Elapsed render-to-commit intervals are not summed.                                               |
+
+### Large reports
+
+| Output                    | Contents                                                                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<capture>.json`          | Report index: session totals, capture availability, counts, and relative page paths. Generated alongside HTML for either CLI format.                                                                            |
+| `<capture>.json.pages-…/` | Event, finding, interaction, profiler, selector, and bookmark pages, each with at most 1,000 records. Keep this directory with the index when sharing reports.                                                  |
+| Evidence                  | Each event is exported once. A finding references its inclusive `sequenceStart`–`sequenceEnd` range; event-page sequence and timestamp bounds identify which pages to load.                                     |
+| HTML previews             | First 100 findings, 20 evidence events per finding, 200 interactions/profilers/selectors/bookmarks, and 5,000 timeline events. Notices identify omitted detail; the CLI adds a link to the complete JSON index. |
+| Replacement               | Pages are written before publishing the index. Failed exports leave the previous index usable. Previous successful page directories are retained; remove them with old report artifacts when no longer needed.  |
+| Memory                    | JSON pages stream through a buffered writer. Capture decoding, analysis, and interaction summaries still reside in memory. Page limits count records, not bytes.                                                |
+| Small in-process exports  | `Report::to_json()` remains a complete JSON document with one shared event table; the CLI uses paged export instead.                                                                                            |
+
+| Export check (2026-09-13) | Result                                                                                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Synthetic 30 minutes      | 18,000 events at ten per second, 1,800 inputs, and 1,800 deliberately overlapping whole-session findings. This stresses duplication; it is not a typical finding distribution. |
+| Output                    | 2.87 MB total including 725 KB HTML; 4.4 KB index. Previous repeated evidence alone is estimated at 2.78 GB, using compact JSON event-array size × finding count.              |
+| Process                   | About 88ms for report construction/export and 14.5 MB peak RSS on the development machine, debug build. This excludes capture decoding and detector execution.                 |
+| TV capture                | All 42 events, including seven React commits, recovered from the event pages.                                                                                                  |
+| Reproduce                 | `cargo run -p session-telemetry-report --example report_size -- /tmp/rnst-report-size`                                                                                         |
 
 ### Analysis
 

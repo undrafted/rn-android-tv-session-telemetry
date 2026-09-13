@@ -28,3 +28,6 @@ flowchart TD
     Detectors --> Findings["Findings"]
     Findings --> ReportOut["HTML / JSON report"]
     Summary --> ReportOut
+    ReportOut --> Preview["Bounded HTML previews"]
+    ReportOut --> Index["JSON index + counts"]
+    Index --> Pages["Pages: events once, findings by sequence range<br/>interactions + aggregate detail<br/>up to 1,000 records per page"]

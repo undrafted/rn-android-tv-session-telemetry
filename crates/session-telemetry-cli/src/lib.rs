@@ -64,10 +64,8 @@ pub enum Command {
         /// Open the generated HTML report with the OS default application once it's written.
         #[arg(long)]
         open: bool,
-        /// The HTML report is always written; `--format json` additionally writes the complete
-        /// structured document (findings, evidence, bookmarks, thresholds, disclosures) as
-        /// `<session>.json` — the machine-readable contract, for anything scripting against a
-        /// report rather than reading the HTML.
+        /// Writes HTML plus a JSON index and paged details. Both formats retain all detail;
+        /// HTML shows bounded previews. Keep the JSON index and its pages directory together.
         #[arg(long, value_enum, default_value_t = ReportFormat::Html)]
         format: ReportFormat,
     },

@@ -10,3 +10,6 @@ pub use report::{FindingWithEvidence, Report};
 pub use summary::SessionSummary;
 
 pub use react::{ReactInteractionStats, ReactRenderStats, ReactSummary};
+
+mod bundle;
+pub use bundle::write_report_bundle;

@@ -3,12 +3,7 @@ use crate::summary::SessionSummary;
 use session_telemetry_analysis::{QaBookmark, SelectorStats, Severity};
 use session_telemetry_protocol::{Event, ReactCommitPhase, SessionMetadataEvent};
 
-/// Renders a static HTML report from a `Report` — the same structured model `Report::to_json`
-/// serializes, so the HTML and JSON outputs can never drift apart from rendering two separately
-/// hand-maintained views of the session. `report.events` (the full raw session, not part of the
-/// JSON document) is only used here to render the complete session timeline; every finding's own
-/// evidence timeline comes from `report.findings`, already attached and bounded to that finding's
-/// own window regardless of how long the overall session was.
+/// Bounded HTML previews. The CLI links the complete paged JSON export.
 pub fn render_html(report: &Report) -> String {
     format!(
         r#"<!doctype html>
@@ -68,12 +63,15 @@ fn render_react_summary(summary: &crate::ReactSummary) -> String {
     let mut html = String::from(
         "<h2>React render work</h2><p>Recorded callback totals; nested profilers can count the same work. Elapsed render-to-commit time is not summed. Interaction windows end at the first visible-update event or next input; association does not establish cause.</p><table><tr><th>Profiler</th><th>Commits</th><th>Valid durations</th><th>Total render work</th><th>Longest render</th></tr>",
     );
-    for (id, stats) in &summary.by_profiler {
+    for (id, stats) in summary.by_profiler.iter().take(200) {
         html.push_str(&format!(
             "<tr><td>{}</td>{}</tr>",
             escape_html(id),
             cells(stats)
         ));
+    }
+    if summary.by_profiler.len() > 200 {
+        html.push_str("<caption>Showing the first 200 profilers; JSON profiler pages contain all totals.</caption>");
     }
     html.push_str("</table><h3>React work by interaction</h3><table><tr><th>Input sequence / key</th><th>Commits</th><th>Valid durations</th><th>Total render work</th><th>Longest render</th></tr>");
     for row in summary.interactions.iter().take(200) {
@@ -87,7 +85,7 @@ fn render_react_summary(summary: &crate::ReactSummary) -> String {
     html.push_str("</table>");
     if summary.interactions.len() > 200 {
         html.push_str(
-            "<p>Showing the first 200 interactions; JSON contains all interaction summaries.</p>",
+            "<p>Showing the first 200 interactions; JSON interaction pages contain all summaries.</p>",
         );
     }
     html
@@ -160,6 +158,7 @@ fn render_findings(findings: &[FindingWithEvidence]) -> String {
 
     let rows = findings
         .iter()
+        .take(100)
         .map(render_finding_rows)
         .collect::<Vec<_>>()
         .join("\n");
@@ -168,7 +167,9 @@ fn render_findings(findings: &[FindingWithEvidence]) -> String {
         "<table class=\"findings\">\n\
          <thead><tr><th>Severity</th><th>Detector</th><th>Sequence range</th><th>Value</th></tr></thead>\n\
          <tbody>\n{rows}\n</tbody>\n\
-         </table>"
+         </table><p>Showing {} of {} findings. Complete findings and evidence are in the JSON export.</p>",
+        findings.len().min(100),
+        findings.len()
     )
 }
 
@@ -196,7 +197,10 @@ fn render_finding_rows(finding: &FindingWithEvidence) -> String {
         end = finding.finding.sequence_end,
     );
 
-    let evidence = render_evidence_timeline(&finding.evidence);
+    let mut evidence = render_evidence_timeline(&finding.evidence);
+    if finding.evidence_count > finding.evidence.len() {
+        evidence.push_str(&format!("<p>Showing {} of {} evidence events. Use the finding sequence range in the JSON event pages for complete evidence.</p>", finding.evidence.len(), finding.evidence_count));
+    }
     if evidence.is_empty() {
         return finding_row;
     }
@@ -238,6 +242,7 @@ fn render_selector_stats(stats: &[SelectorStats]) -> String {
 
     let rows = stats
         .iter()
+        .take(200)
         .map(|stat| {
             format!(
                 "<tr><td>{}</td><td>{}</td><td>{:.1} ms</td><td>{:.1} ms</td><td>{}</td><td>{}</td></tr>",
@@ -253,7 +258,7 @@ fn render_selector_stats(stats: &[SelectorStats]) -> String {
         .join("\n");
 
     format!(
-        "<h1>Selectors</h1>\n\
+        "<p>Showing up to 200 selectors; JSON selector pages contain all totals.</p><h1>Selectors</h1>\n\
          <table class=\"selectors\">\n\
          <thead><tr><th>Selector</th><th>Invocations</th><th>Total duration</th><th>Max duration</th><th>Recomputations</th><th>Unstable results</th></tr></thead>\n\
          <tbody>\n{rows}\n</tbody>\n\
@@ -272,6 +277,7 @@ fn render_bookmarks(bookmarks: &[QaBookmark]) -> String {
 
     let rows = bookmarks
         .iter()
+        .take(200)
         .map(|bookmark| {
             format!(
                 "<li><span class=\"elapsed\">{:.0} ms</span> \
@@ -285,7 +291,7 @@ fn render_bookmarks(bookmarks: &[QaBookmark]) -> String {
         .join("\n");
 
     format!(
-        "<h1>QA bookmarks</h1>\n\
+        "<p>Showing up to 200 bookmarks; JSON bookmark pages contain all entries.</p><h1>QA bookmarks</h1>\n\
          <p class=\"bookmark-note\">Mapped from workstation timestamps onto the session's own \
          timeline via on-device clock-sync samples (and, if captured, a device/workstation clock \
          offset from record time) — treat placement as approximate, not frame-accurate.</p>\n\
