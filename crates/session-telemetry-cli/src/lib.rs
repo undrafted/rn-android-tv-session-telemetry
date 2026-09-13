@@ -74,6 +74,11 @@ pub enum Command {
         /// ./pulled-sessions/<session>.
         #[arg(long)]
         out: Option<String>,
+        /// How many pulled sessions to retain (by local modification time) in the destination's
+        /// parent directory after this pull — older ones beyond that are deleted. Only prunes
+        /// siblings under the same parent `--out` resolves into, never anything else on disk.
+        #[arg(long, default_value_t = 10)]
+        keep: usize,
     },
 }
 
@@ -305,12 +310,13 @@ mod tests {
                 device: "emulator-5554".to_string(),
                 package: "com.rnsessiontelemetry.tvfixture".to_string(),
                 out: None,
+                keep: 10,
             }
         );
     }
 
     #[test]
-    fn parses_pull_with_an_explicit_out_directory() {
+    fn parses_pull_with_an_explicit_out_directory_and_keep_count() {
         let cli = Cli::try_parse_from([
             "session-telemetry",
             "pull",
@@ -321,6 +327,8 @@ mod tests {
             "com.rnsessiontelemetry.tvfixture",
             "--out",
             "./sessions/first",
+            "--keep",
+            "5",
         ])
         .unwrap();
 
@@ -331,6 +339,7 @@ mod tests {
                 device: "emulator-5554".to_string(),
                 package: "com.rnsessiontelemetry.tvfixture".to_string(),
                 out: Some("./sessions/first".to_string()),
+                keep: 5,
             }
         );
     }

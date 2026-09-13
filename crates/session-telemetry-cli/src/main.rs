@@ -1,6 +1,7 @@
 use clap::Parser;
 use session_telemetry_adb::{
-    DeviceState, parse_devices_output, parse_find_output, resolve_session_dir,
+    DeviceState, parse_devices_output, parse_find_output, prune_sealed_sessions_dir,
+    resolve_session_dir,
 };
 use session_telemetry_analysis::{
     Finding, build_interaction_windows, detect_excessive_commits_during_rapid_focus_movement,
@@ -35,7 +36,8 @@ fn main() {
             device,
             package,
             out,
-        } => run_pull(&session, &device, &package, out),
+            keep,
+        } => run_pull(&session, &device, &package, out, keep),
         other => println!("`{other:?}` is not implemented yet."),
     }
 }
@@ -190,7 +192,7 @@ fn cat_on_device(device: &str, package: &str, remote_path: &str) -> Option<Vec<u
     output.status.success().then_some(output.stdout)
 }
 
-fn run_pull(session: &str, device: &str, package: &str, out: Option<String>) {
+fn run_pull(session: &str, device: &str, package: &str, out: Option<String>, keep: usize) {
     let session_dirs = find_on_device(
         device,
         package,
@@ -257,6 +259,19 @@ fn run_pull(session: &str, device: &str, package: &str, out: Option<String>) {
     }
 
     println!("Pulled {pulled_count} chunk(s) from {session_name} into {out_dir}/");
+
+    // Siblings of out_dir under the same parent - the default `pulled-sessions/<session>` shape
+    // and a custom `--out` both generalize the same way, so pruning isn't tied to the default
+    // location specifically.
+    if let Some(sessions_dir) = Path::new(&out_dir).parent()
+        && let Ok(removed) = prune_sealed_sessions_dir(sessions_dir, keep)
+        && !removed.is_empty()
+    {
+        println!(
+            "Pruned {} older pulled session(s), keeping the {keep} most recent.",
+            removed.len()
+        );
+    }
 }
 
 const PULLED_SESSIONS_DIR: &str = "pulled-sessions";
