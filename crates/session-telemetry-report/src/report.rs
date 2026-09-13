@@ -1,7 +1,7 @@
 use crate::summary::SessionSummary;
 use serde::Serialize;
-use session_telemetry_analysis::{Finding, QaBookmark};
-use session_telemetry_protocol::Event;
+use session_telemetry_analysis::{Finding, QaBookmark, session_metadata_from_events};
+use session_telemetry_protocol::{Event, SessionMetadataEvent};
 
 /// Bumped when the report document's own shape changes (distinct from `ChunkManifest`'s
 /// `SCHEMA_VERSION`, which versions the on-disk session format, not this derived document) —
@@ -28,6 +28,10 @@ pub struct Report<'a> {
     /// `ClockMap::uncertainty_ms` at report time, or `None` when the session had no clock-sync
     /// samples to fit a map from (see `main.rs::load_mapped_bookmarks` for the same check).
     pub clock_uncertainty_ms: Option<f64>,
+    /// The session's device/build context, if the JS library that recorded it emitted one — see
+    /// `SessionMetadataEvent`'s own doc comment. `None` for a session recorded by an older
+    /// library version, not an error.
+    pub device_metadata: Option<&'a SessionMetadataEvent>,
     pub findings: Vec<FindingWithEvidence<'a>>,
     pub bookmarks: &'a [QaBookmark],
     /// The full raw session, kept off the wire (`#[serde(skip)]`) so the JSON document stays
@@ -51,6 +55,7 @@ impl<'a> Report<'a> {
             schema_version: REPORT_SCHEMA_VERSION,
             summary,
             clock_uncertainty_ms,
+            device_metadata: session_metadata_from_events(events),
             findings: findings
                 .iter()
                 .map(|finding| FindingWithEvidence {
@@ -151,6 +156,34 @@ mod tests {
         assert_eq!(report.events.len(), 2);
         assert!(json.contains("\"schemaVersion\": 1"));
         assert!(!json.contains("\"remote-input\""));
+    }
+
+    #[test]
+    fn carries_the_sessions_device_metadata_when_present() {
+        let metadata = session_telemetry_protocol::SessionMetadataEvent {
+            sequence: 0,
+            timestamp: 0.0,
+            device_model: "sdk_google_atv64_arm64".to_string(),
+            os_version: "14".to_string(),
+            app_version: None,
+            build_type: None,
+        };
+        let events = vec![Event::SessionMetadata(metadata.clone())];
+        let summary = SessionSummary::from_events(&events);
+
+        let report = Report::new(&summary, &[], &events, &[], None);
+
+        assert_eq!(report.device_metadata, Some(&metadata));
+    }
+
+    #[test]
+    fn device_metadata_is_none_when_absent() {
+        let events = sample_events();
+        let summary = SessionSummary::from_events(&events);
+
+        let report = Report::new(&summary, &[], &events, &[], None);
+
+        assert_eq!(report.device_metadata, None);
     }
 
     #[test]

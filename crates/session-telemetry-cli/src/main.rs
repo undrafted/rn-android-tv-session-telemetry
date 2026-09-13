@@ -6,8 +6,8 @@ use session_telemetry_adb::{
 use session_telemetry_analysis::{
     ClockMap, Finding, QaBookmark, build_interaction_windows, clock_sync_samples_from_events,
     create_bookmark, detect_excessive_commits_during_rapid_focus_movement,
-    detect_high_latency_focus_changes, detect_js_stalls_overlapping_interactions,
-    detect_network_completions_followed_by_commits,
+    detect_high_latency_focus_changes, detect_high_latency_visible_updates,
+    detect_js_stalls_overlapping_interactions, detect_network_completions_followed_by_commits,
     detect_react_commits_overlapping_delayed_frames, detect_repeated_network_requests,
     detect_repeated_redux_dispatches,
 };
@@ -558,6 +558,7 @@ fn collect_findings(chunk: &Chunk) -> Vec<Finding> {
     let windows = build_interaction_windows(&chunk.events);
 
     let mut findings = detect_high_latency_focus_changes(&windows);
+    findings.extend(detect_high_latency_visible_updates(&windows));
     findings.extend(detect_repeated_redux_dispatches(&windows));
     findings.extend(detect_js_stalls_overlapping_interactions(&windows));
     findings.extend(detect_repeated_network_requests(&windows));

@@ -112,7 +112,16 @@ android {
         // Mirrors `release` (same optimization/signing) so measured overhead is representative,
         // but the JS bundle step must be run with RNST_PROFILING=1 so the
         // __RN_SESSION_TELEMETRY_ENABLED__ Babel define resolves to `true` instead of being
-        // dead-code-eliminated. Verified end-to-end on the Android emulator.
+        // dead-code-eliminated.
+        //
+        // Known gap, confirmed against a real build while verifying M6: `createBundleProfilingJsAndAssets`
+        // (React Native Gradle Plugin's BundleHermesCTask) has no Gradle-DSL environment hook and
+        // doesn't track env vars as task inputs, so it silently inherits whatever environment the
+        // Gradle daemon happened to start with - a plain `npm run android` can produce a bundle
+        // with the flag compiled to `false` (nothing recorded, no error) if a stale daemon is
+        // already running. Until this is fixed properly, build with
+        // `RNST_PROFILING=1 ./gradlew --no-daemon :app:installProfiling` (or stop any running
+        // daemon first) to guarantee the flag actually takes effect.
         profiling {
             initWith release
             matchingFallbacks = ['release']

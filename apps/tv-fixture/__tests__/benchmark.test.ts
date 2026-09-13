@@ -18,6 +18,13 @@ jest.mock('react-native', () => ({
     return { addListener: jest.fn(() => ({ remove: jest.fn() })) };
   }),
   NativeModules: {},
+  // install() reads this (index.ts's emitSessionMetadata) on every call - mirrors a realistic
+  // Android shape, same as packages/react-native's own Vitest suite.
+  Platform: {
+    OS: 'android',
+    constants: { Model: 'sdk_google_atv64_arm64' },
+    Version: 14,
+  },
 }));
 
 test('runs the requested number of iterations in both phases', () => {

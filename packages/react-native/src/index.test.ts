@@ -9,12 +9,18 @@ const { addListenerMock, removeMock } = vi.hoisted(() => ({
 // TVEventHandler needs a native bridge that doesn't exist outside a real RN runtime, so
 // 'react-native' is mocked directly rather than pulling in RN's Jest preset here. NativeModules
 // is empty (no RNSessionTelemetryWriter) so every pushEvent() exercises transferEventToNative's
-// no-native-module path, same as a real JS-only test host would.
+// no-native-module path, same as a real JS-only test host would. Platform mirrors a realistic
+// Android shape since emitSessionMetadata (index.ts) reads it during every install().
 vi.mock('react-native', () => ({
   TVEventHandler: {
     addListener: addListenerMock,
   },
   NativeModules: {},
+  Platform: {
+    OS: 'android',
+    constants: { Model: 'sdk_google_atv64_arm64' },
+    Version: 14,
+  },
 }));
 
 function emitHardwareEvent(eventType: string): void {
@@ -22,13 +28,15 @@ function emitHardwareEvent(eventType: string): void {
   handler({ eventType });
 }
 
-// Every install() resets the clock-sync interval, so the very first pushEvent() after it always
-// piggybacks a 'clock-sync' sample (see index.ts's maybeEmitClockSync) - real and intentional,
-// but incidental to what these tests are actually checking, so they read the buffer through
-// this rather than SessionTelemetry.getBufferedEvents() directly wherever a clock-sync sample
-// would otherwise land as an unexpected extra/leading entry.
-function nonClockSyncEvents() {
-  return SessionTelemetry.getBufferedEvents().filter((event) => event.type !== 'clock-sync');
+// Every install() emits its own baseline 'clock-sync' sample (see index.ts's maybeEmitClockSync)
+// and a one-time 'session-metadata' event (emitSessionMetadata) - both real and intentional, but
+// incidental to what these tests are actually checking, so they read the buffer through this
+// rather than SessionTelemetry.getBufferedEvents() directly wherever either would otherwise land
+// as an unexpected extra/leading entry.
+function applicationEvents() {
+  return SessionTelemetry.getBufferedEvents().filter(
+    (event) => event.type !== 'clock-sync' && event.type !== 'session-metadata',
+  );
 }
 
 beforeEach(() => {
@@ -59,7 +67,9 @@ describe('install/stop', () => {
 
     SessionTelemetry.install();
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([]);
+    // The fresh install's own baseline clock-sync/session-metadata events are expected here -
+    // what this test actually checks is that 'previous-session-event' didn't survive the cycle.
+    expect(applicationEvents()).toEqual([]);
   });
 });
 
@@ -69,7 +79,11 @@ describe('before install', () => {
     SessionTelemetry.recordFocus('should-be-dropped');
     SessionTelemetry.recordDispatch('should/be-dropped', 1);
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([]);
+    // applicationEvents(), not getBufferedEvents() directly: this test never installs, so it
+    // adds nothing of its own, but a prior test's install() can leave its own baseline
+    // clock-sync/session-metadata events sitting in the buffer (stop() doesn't clear it) - real
+    // shared module state, incidental to what this test checks.
+    expect(applicationEvents()).toEqual([]);
   });
 });
 
@@ -78,7 +92,7 @@ describe('remote input', () => {
     SessionTelemetry.install();
     emitHardwareEvent('right');
 
-    const events = nonClockSyncEvents();
+    const events = applicationEvents();
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'remote-input', key: 'right' });
   });
@@ -88,7 +102,7 @@ describe('remote input', () => {
     emitHardwareEvent('focus');
     emitHardwareEvent('blur');
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([]);
+    expect(applicationEvents()).toEqual([]);
   });
 });
 
@@ -98,7 +112,7 @@ describe('recordFocus', () => {
     SessionTelemetry.recordFocus('card-1');
     SessionTelemetry.recordFocus('card-2');
 
-    const [first, second] = nonClockSyncEvents();
+    const [first, second] = applicationEvents();
     expect(first).toMatchObject({ type: 'focus', targetId: 'card-1', previousTargetId: null });
     expect(second).toMatchObject({
       type: 'focus',
@@ -108,12 +122,34 @@ describe('recordFocus', () => {
   });
 });
 
+describe('recordVisibleUpdate', () => {
+  it('records the target id', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.recordVisibleUpdate('card-2');
+
+    expect(applicationEvents()).toEqual([
+      expect.objectContaining({ type: 'visible-update', targetId: 'card-2' }),
+    ]);
+  });
+
+  it('is a no-op before install', () => {
+    // Length delta, not an absolute-empty check: stop() (see beforeEach) doesn't clear the
+    // buffer, so a prior test's own events can still be sitting in it here - this only checks
+    // that recordVisibleUpdate itself adds nothing before install.
+    const before = SessionTelemetry.getBufferedEvents().length;
+
+    SessionTelemetry.recordVisibleUpdate('should-be-dropped');
+
+    expect(SessionTelemetry.getBufferedEvents()).toHaveLength(before);
+  });
+});
+
 describe('mark', () => {
   it('records a named interaction marker', () => {
     SessionTelemetry.install();
     SessionTelemetry.mark('demo:card-select');
 
-    expect(nonClockSyncEvents()).toEqual([
+    expect(applicationEvents()).toEqual([
       expect.objectContaining({ type: 'interaction-marker', name: 'demo:card-select' }),
     ]);
   });
@@ -124,7 +160,7 @@ describe('recordDispatch', () => {
     SessionTelemetry.install();
     SessionTelemetry.recordDispatch('catalog/itemFocused', 4.2);
 
-    expect(nonClockSyncEvents()).toEqual([
+    expect(applicationEvents()).toEqual([
       expect.objectContaining({
         type: 'redux-dispatch',
         actionType: 'catalog/itemFocused',
@@ -139,7 +175,7 @@ describe('recordReactCommit', () => {
     SessionTelemetry.install();
     SessionTelemetry.recordReactCommit('CatalogRow', 'update', 12.5, 8.1);
 
-    expect(nonClockSyncEvents()).toEqual([
+    expect(applicationEvents()).toEqual([
       expect.objectContaining({
         type: 'react-commit',
         profilerId: 'CatalogRow',
@@ -156,7 +192,7 @@ describe('recordFrameTiming', () => {
     SessionTelemetry.install();
     SessionTelemetry.recordFrameTiming(48.2);
 
-    expect(nonClockSyncEvents()).toEqual([
+    expect(applicationEvents()).toEqual([
       expect.objectContaining({ type: 'frame-timing', durationMs: 48.2 }),
     ]);
   });
@@ -172,20 +208,26 @@ describe('bounded buffer', () => {
     const events = SessionTelemetry.getBufferedEvents();
     expect(events).toHaveLength(2);
     expect(events.map((event) => (event as { name: string }).name)).toEqual(['two', 'three']);
-    // 2, not 3 events' worth of drops: install()'s baseline clock-sync sample occupies a buffer
-    // slot too (see maybeEmitClockSync) and is itself evicted first, before either 'one' is.
-    expect(SessionTelemetry.getDroppedEventCount()).toBe(2);
+    // 3, not 2 events' worth of drops: install()'s own baseline clock-sync and session-metadata
+    // events each occupy a buffer slot too (see maybeEmitClockSync/emitSessionMetadata) and are
+    // themselves evicted first, before either 'one' or 'two' is.
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(3);
   });
 
   it('resets droppedEventCount on a fresh install', () => {
     SessionTelemetry.install({ maxBufferedEvents: 1 });
     SessionTelemetry.mark('one');
     SessionTelemetry.mark('two');
-    expect(SessionTelemetry.getDroppedEventCount()).toBe(2);
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(3);
 
     SessionTelemetry.install({ maxBufferedEvents: 1 });
 
-    expect(SessionTelemetry.getDroppedEventCount()).toBe(0);
+    // 1, not 0: droppedEventCount itself resets to 0 as part of install(), but with a
+    // maxBufferedEvents of 1, install()'s own two baseline events (clock-sync, then
+    // session-metadata) can't both fit - the second evicts the first, counting as one drop of
+    // this fresh session's own event, not a carryover from the previous one. A capacity above 1
+    // would show 0 here instead; this specific assertion is about the reset, not the eviction.
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(1);
   });
 
   it('clamps a non-positive maxBufferedEvents to at least 1', () => {
@@ -194,6 +236,35 @@ describe('bounded buffer', () => {
     SessionTelemetry.mark('two');
 
     expect(SessionTelemetry.getBufferedEvents()).toHaveLength(1);
+  });
+});
+
+describe('session metadata', () => {
+  it('emits one session-metadata event per install, with device info from Platform', () => {
+    SessionTelemetry.install();
+
+    const events = SessionTelemetry.getBufferedEvents().filter(
+      (event) => event.type === 'session-metadata',
+    );
+    expect(events).toEqual([
+      expect.objectContaining({
+        deviceModel: 'sdk_google_atv64_arm64',
+        osVersion: '14',
+        appVersion: null,
+        buildType: null,
+      }),
+    ]);
+  });
+
+  it('carries the appVersion/buildType the host app supplies', () => {
+    SessionTelemetry.install({ appVersion: '1.2.3', buildType: 'profiling' });
+
+    const events = SessionTelemetry.getBufferedEvents().filter(
+      (event) => event.type === 'session-metadata',
+    );
+    expect(events).toEqual([
+      expect.objectContaining({ appVersion: '1.2.3', buildType: 'profiling' }),
+    ]);
   });
 });
 

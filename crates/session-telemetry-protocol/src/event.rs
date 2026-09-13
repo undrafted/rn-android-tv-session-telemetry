@@ -16,6 +16,8 @@ pub enum Event {
     ReactCommit(ReactCommitEvent),
     FrameTiming(FrameTimingEvent),
     ClockSync(ClockSyncEvent),
+    VisibleUpdate(VisibleUpdateEvent),
+    SessionMetadata(SessionMetadataEvent),
 }
 
 impl Event {
@@ -33,6 +35,8 @@ impl Event {
             Event::ReactCommit(event) => event.sequence,
             Event::FrameTiming(event) => event.sequence,
             Event::ClockSync(event) => event.sequence,
+            Event::VisibleUpdate(event) => event.sequence,
+            Event::SessionMetadata(event) => event.sequence,
         }
     }
 
@@ -50,6 +54,8 @@ impl Event {
             Event::ReactCommit(event) => event.timestamp,
             Event::FrameTiming(event) => event.timestamp,
             Event::ClockSync(event) => event.timestamp,
+            Event::VisibleUpdate(event) => event.timestamp,
+            Event::SessionMetadata(event) => event.timestamp,
         }
     }
 }
@@ -147,6 +153,39 @@ pub struct ClockSyncEvent {
     pub sequence: u64,
     pub timestamp: f64,
     pub wall_clock_unix_ms: f64,
+}
+
+/// A best-effort confirmation that a focus change's visual result was scheduled to paint —
+/// emitted by `FocusableView` (`packages/react-native/src/FocusableView.tsx`) from a
+/// `requestAnimationFrame` callback right after `recordFocus`. This is the closest signal
+/// available without deeper native compositor instrumentation: a scheduled JS frame callback is
+/// not a guarantee the pixels were actually presented on screen, only that a render was queued
+/// for the next frame. Treat `target_id` as identifying which focus change this confirms, and
+/// the latency it yields as approximate, not frame-accurate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisibleUpdateEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub target_id: String,
+}
+
+/// Device/build/session context, emitted once from `SessionTelemetry.install()` (mirrors
+/// `ClockSyncEvent`'s "one informational event in the same stream" shape, but emitted once, not
+/// periodically — this describes the session itself, not a recurring measurement).
+/// `device_model`/`os_version` come from React Native's own `Platform` module, already available
+/// with no new native code; `app_version`/`build_type` are `None` unless the host app supplies
+/// them via `InstallOptions` — the library has no way to know its host's own version or build
+/// flavor on its own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMetadataEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub device_model: String,
+    pub os_version: String,
+    pub app_version: Option<String>,
+    pub build_type: Option<String>,
 }
 
 #[cfg(test)]
@@ -288,6 +327,19 @@ mod tests {
                 timestamp: 9.0,
                 wall_clock_unix_ms: 1_700_000_000_000.0,
             }),
+            Event::VisibleUpdate(VisibleUpdateEvent {
+                sequence: 9,
+                timestamp: 10.0,
+                target_id: "card-2".to_string(),
+            }),
+            Event::SessionMetadata(SessionMetadataEvent {
+                sequence: 10,
+                timestamp: 11.0,
+                device_model: "sdk_google_atv64_arm64".to_string(),
+                os_version: "14".to_string(),
+                app_version: Some("1.2.3".to_string()),
+                build_type: Some("profiling".to_string()),
+            }),
         ];
 
         for event in events {
@@ -295,6 +347,44 @@ mod tests {
             let decoded: Event = serde_json::from_str(&json).unwrap();
             assert_eq!(decoded, event);
         }
+    }
+
+    #[test]
+    fn decodes_a_visible_update_event_exactly_as_the_js_library_serializes_it() {
+        let json =
+            r#"{"type":"visible-update","sequence":11,"timestamp":214.0,"targetId":"card-2"}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            event,
+            Event::VisibleUpdate(VisibleUpdateEvent {
+                sequence: 11,
+                timestamp: 214.0,
+                target_id: "card-2".to_string(),
+            })
+        );
+        assert_eq!(event.sequence(), 11);
+        assert_eq!(event.timestamp(), 214.0);
+    }
+
+    #[test]
+    fn decodes_a_session_metadata_event_with_null_app_fields() {
+        let json = r#"{"type":"session-metadata","sequence":0,"timestamp":0.0,"deviceModel":"sdk_google_atv64_arm64","osVersion":"14","appVersion":null,"buildType":null}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            event,
+            Event::SessionMetadata(SessionMetadataEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                device_model: "sdk_google_atv64_arm64".to_string(),
+                os_version: "14".to_string(),
+                app_version: None,
+                build_type: None,
+            })
+        );
     }
 
     #[test]

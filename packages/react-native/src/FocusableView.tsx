@@ -18,6 +18,14 @@ export function FocusableView({ id, onFocus, ...rest }: FocusableViewProps) {
       {...rest}
       onFocus={(event) => {
         SessionTelemetry.recordFocus(id);
+        // Best-effort visible-update confirmation: a requestAnimationFrame callback is the
+        // closest signal available without deeper native compositor instrumentation - it
+        // confirms a render was scheduled for the next frame, not that the pixels were actually
+        // presented on screen. Treat the resulting latency as approximate, not frame-accurate
+        // (see VisibleUpdateEvent's own doc comment on the Rust side).
+        requestAnimationFrame(() => {
+          SessionTelemetry.recordVisibleUpdate(id);
+        });
         onFocus?.(event);
       }}
     />

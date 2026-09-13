@@ -1,4 +1,4 @@
-import { TVEventHandler, type EventSubscription, type HWEvent } from 'react-native';
+import { Platform, TVEventHandler, type EventSubscription, type HWEvent } from 'react-native';
 import { createSequenceCounter, monotonicNowMs } from './clock.js';
 import { isRemoteInputEventType, type SessionTelemetryEvent } from './events.js';
 import {
@@ -18,6 +18,8 @@ export type {
   JsStallEvent,
   ReactCommitEvent,
   FrameTimingEvent,
+  VisibleUpdateEvent,
+  SessionMetadataEvent,
 } from './events.js';
 export { FocusableView, type FocusableViewProps } from './FocusableView.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
@@ -30,6 +32,11 @@ export interface InstallOptions {
   // (a sliding window), and droppedEventCount increments — bounded memory over a multi-hour QA
   // capture instead of an unbounded array. Clamped to >= 1.
   maxBufferedEvents?: number;
+  // This library has no way to know its host app's own version or build flavor on its own -
+  // these are carried straight into the session's one-time SessionMetadataEvent when supplied,
+  // and left null otherwise (not guessed).
+  appVersion?: string;
+  buildType?: string;
 }
 
 export interface SessionTelemetryApi {
@@ -37,6 +44,7 @@ export interface SessionTelemetryApi {
   stop(): void;
   mark(name: string): void;
   recordFocus(targetId: string): void;
+  recordVisibleUpdate(targetId: string): void;
   recordDispatch(actionType: string, durationMs: number): void;
   recordNetworkRequest(
     method: string,
@@ -128,6 +136,28 @@ function maybeEmitClockSync(): void {
   emitClockSync();
 }
 
+// Emitted once per install() - deviceModel/osVersion come from React Native's own Platform
+// module (already available on Android with no new native code); appVersion/buildType come
+// from the host app's own InstallOptions, since this library can't know them itself.
+function emitSessionMetadata(options?: InstallOptions): void {
+  maybeEmitClockSync();
+  // Platform.constants' shape is a per-OS union (Model/Release only exist on the Android
+  // variant) - this library targets Android TV specifically (see this repo's own conventions),
+  // but narrows explicitly rather than assuming, so a non-Android host reports 'unknown' instead
+  // of a wrong guess.
+  const deviceModel = Platform.OS === 'android' ? Platform.constants.Model : 'unknown';
+  const osVersion = Platform.OS === 'android' ? String(Platform.Version) : 'unknown';
+  pushToBufferAndNative({
+    type: 'session-metadata',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    deviceModel,
+    osVersion,
+    appVersion: options?.appVersion ?? null,
+    buildType: options?.buildType ?? null,
+  });
+}
+
 
 function handleHardwareEvent(event: HWEvent): void {
   if (!installed || !isRemoteInputEventType(event.eventType)) {
@@ -163,8 +193,16 @@ function install(options?: InstallOptions): void {
     emitClockSync();
   });
   // This is the app's own enable trigger - see nativeTransfer.ts for why this must actually
-  // start durable on-device recording, not just the JS-side buffer/subscriptions above.
+  // start durable on-device recording, not just the JS-side buffer/subscriptions above. Must
+  // run before emitSessionMetadata below: the native pushEvent bridge call is a no-op until a
+  // session is open (SessionWriterModule.pushEvent's handle==0 guard), and calling start()
+  // first guarantees native processes it before the pushEvent call that follows in the same JS
+  // tick (bridge calls to one module are dispatched in the order JS made them) - reversed, the
+  // baseline clock-sync and session-metadata events would reach native before any session
+  // existed to hold them and be silently dropped every time, confirmed against a real device
+  // trace, not a hypothetical.
   startNativeSession();
+  emitSessionMetadata(options);
 }
 
 function stop(): void {
@@ -202,6 +240,19 @@ function recordFocus(targetId: string): void {
     previousTargetId: previousFocusTarget,
   });
   previousFocusTarget = targetId;
+}
+
+function recordVisibleUpdate(targetId: string): void {
+  if (!installed) {
+    return;
+  }
+  maybeEmitClockSync();
+  pushToBufferAndNative({
+    type: 'visible-update',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    targetId,
+  });
 }
 
 function recordDispatch(actionType: string, durationMs: number): void {
@@ -303,6 +354,7 @@ export const SessionTelemetry: SessionTelemetryApi = {
   stop,
   mark,
   recordFocus,
+  recordVisibleUpdate,
   recordDispatch,
   recordNetworkRequest,
   recordJsStall,

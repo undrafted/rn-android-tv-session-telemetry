@@ -17,6 +17,8 @@ pub struct SessionSummary {
     pub react_commit_count: usize,
     pub frame_timing_count: usize,
     pub clock_sync_count: usize,
+    pub visible_update_count: usize,
+    pub session_metadata_count: usize,
     /// The chunk's own `ChunkManifest::loss_count` — not derivable from `events` alone (a lost
     /// event is, by definition, not among them), so this defaults to `0` here and the caller
     /// (`main.rs`, which has the manifest) sets it explicitly after construction. Always `0`
@@ -42,6 +44,8 @@ impl SessionSummary {
             react_commit_count: 0,
             frame_timing_count: 0,
             clock_sync_count: 0,
+            visible_update_count: 0,
+            session_metadata_count: 0,
             loss_count: 0,
             sequence_start: None,
             sequence_end: None,
@@ -60,6 +64,8 @@ impl SessionSummary {
                 Event::ReactCommit(_) => summary.react_commit_count += 1,
                 Event::FrameTiming(_) => summary.frame_timing_count += 1,
                 Event::ClockSync(_) => summary.clock_sync_count += 1,
+                Event::VisibleUpdate(_) => summary.visible_update_count += 1,
+                Event::SessionMetadata(_) => summary.session_metadata_count += 1,
             }
 
             let sequence = event.sequence();
@@ -178,6 +184,8 @@ mod tests {
         assert_eq!(summary.js_stall_count, 1);
         assert_eq!(summary.react_commit_count, 1);
         assert_eq!(summary.frame_timing_count, 1);
+        assert_eq!(summary.visible_update_count, 0);
+        assert_eq!(summary.session_metadata_count, 0);
         assert_eq!(summary.sequence_start, Some(0));
         assert_eq!(summary.sequence_end, Some(7));
         assert_eq!(summary.timestamp_start, Some(0.0));
@@ -197,6 +205,30 @@ mod tests {
         assert_eq!(decoded["reduxDispatchCount"], 1);
         assert_eq!(decoded["frameTimingCount"], 1);
         assert_eq!(decoded["lossCount"], 3);
+    }
+
+    #[test]
+    fn counts_visible_update_and_session_metadata_events() {
+        let events = vec![
+            Event::VisibleUpdate(session_telemetry_protocol::VisibleUpdateEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                target_id: "card-2".to_string(),
+            }),
+            Event::SessionMetadata(session_telemetry_protocol::SessionMetadataEvent {
+                sequence: 1,
+                timestamp: 0.0,
+                device_model: "sdk_google_atv64_arm64".to_string(),
+                os_version: "14".to_string(),
+                app_version: None,
+                build_type: None,
+            }),
+        ];
+
+        let summary = SessionSummary::from_events(&events);
+
+        assert_eq!(summary.visible_update_count, 1);
+        assert_eq!(summary.session_metadata_count, 1);
     }
 
     #[test]

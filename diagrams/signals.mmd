@@ -5,14 +5,14 @@ flowchart TD
     InteractionMarker["Interaction markers"] --> Timeline
     Redux["Redux dispatches"] --> Timeline
     Network["Network requests"] --> Timeline
-    VisibleUpdate["Visible-update marker<br/>(planned)"] -.-> Timeline
+    VisibleUpdate["Visible-update marker"] --> Timeline
     ReactCommit["React commits"] --> Timeline
     JSStall["JS stalls"] --> Timeline
     FrameTiming["Android frame timing"] --> Timeline
     ClockSync["Clock-sync samples"] --> Timeline
     Bookmarks["QA bookmarks"] --> Timeline
     LossCount["Loss counter<br/>(real, always 0 — no detection wired up yet)"] --> Summary
-    SessionMeta["Session metadata<br/>device info<br/>(planned)"] -.-> Summary
+    SessionMeta["Session metadata<br/>device info"] --> Summary
 
     Timeline --> Windows["Interaction windows"]
     Timeline --> Summary["Session summary"]

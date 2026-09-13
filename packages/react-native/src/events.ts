@@ -78,6 +78,31 @@ export interface ClockSyncEvent {
   wallClockUnixMs: number;
 }
 
+// A best-effort confirmation that a focus change's visual result was scheduled to paint - see
+// FocusableView.tsx, which emits this from a requestAnimationFrame callback right after
+// recordFocus. Not a guarantee the pixels were actually presented on screen, only that a render
+// was queued for the next frame - treat the latency it yields as approximate, not frame-accurate.
+export interface VisibleUpdateEvent {
+  type: 'visible-update';
+  sequence: number;
+  timestamp: number;
+  targetId: string;
+}
+
+// Device/build/session context, emitted once from SessionTelemetry.install() (see index.ts).
+// deviceModel/osVersion come from React Native's own Platform module; appVersion/buildType are
+// null unless the host app supplies them via InstallOptions - this library has no way to know
+// its host's own version or build flavor on its own.
+export interface SessionMetadataEvent {
+  type: 'session-metadata';
+  sequence: number;
+  timestamp: number;
+  deviceModel: string;
+  osVersion: string;
+  appVersion: string | null;
+  buildType: string | null;
+}
+
 export type SessionTelemetryEvent =
   | RemoteInputEvent
   | FocusEvent
@@ -87,7 +112,9 @@ export type SessionTelemetryEvent =
   | JsStallEvent
   | ReactCommitEvent
   | FrameTimingEvent
-  | ClockSyncEvent;
+  | ClockSyncEvent
+  | VisibleUpdateEvent
+  | SessionMetadataEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,

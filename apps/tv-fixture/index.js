@@ -26,7 +26,9 @@ if (__RN_SESSION_TELEMETRY_ENABLED__) {
     // eslint-disable-next-line no-console
     console.log('RNST_OVERHEAD_BENCHMARK', JSON.stringify(result));
   } else {
-    SessionTelemetry.install();
+    // This branch only runs in a real profiling build (RNST_PROFILING=1, see
+    // babel-plugin-rnst-profiling-flag.js), so 'profiling' here is accurate, not guessed.
+    SessionTelemetry.install({ buildType: 'profiling' });
     startFrameTimingMonitor();
   }
 }

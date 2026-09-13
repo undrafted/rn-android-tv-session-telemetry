@@ -7,11 +7,26 @@ const { addListenerMock } = vi.hoisted(() => ({
 // Same reasoning as index.test.ts: 'react-native' needs a native bridge Vitest doesn't have.
 // Pressable is never actually rendered here — FocusableView is called directly as a plain
 // function and its returned element's props are inspected — so a string placeholder is enough.
+// Platform mirrors a realistic Android shape since install() reads it (index.ts's
+// emitSessionMetadata).
 vi.mock('react-native', () => ({
   TVEventHandler: { addListener: addListenerMock },
   Pressable: 'Pressable',
   NativeModules: {},
+  Platform: {
+    OS: 'android',
+    constants: { Model: 'sdk_google_atv64_arm64' },
+    Version: 14,
+  },
 }));
+
+// Real RN environments polyfill requestAnimationFrame globally; Vitest's node environment
+// doesn't. Stubbed to run its callback synchronously so the visible-update assertions below
+// don't need to wait a real frame.
+vi.stubGlobal('requestAnimationFrame', (callback: (time: number) => void) => {
+  callback(0);
+  return 0;
+});
 
 const { FocusableView } = await import('./FocusableView.js');
 const { SessionTelemetry } = await import('./index.js');
@@ -25,11 +40,15 @@ describe('FocusableView', () => {
     const element = FocusableView({ id: 'card-1' });
     element.props.onFocus?.({} as never);
 
-    // install()'s baseline clock-sync sample (see index.ts's maybeEmitClockSync) lands ahead of
-    // this focus event in the buffer - filtered out here since it's incidental to what this
-    // test checks.
-    const events = SessionTelemetry.getBufferedEvents().filter((event) => event.type !== 'clock-sync');
-    expect(events).toEqual([expect.objectContaining({ type: 'focus', targetId: 'card-1' })]);
+    // install()'s own baseline clock-sync/session-metadata events land ahead of this focus
+    // event in the buffer - filtered out here since they're incidental to what this test checks.
+    const events = SessionTelemetry.getBufferedEvents().filter(
+      (event) => event.type !== 'clock-sync' && event.type !== 'session-metadata',
+    );
+    expect(events).toEqual([
+      expect.objectContaining({ type: 'focus', targetId: 'card-1' }),
+      expect.objectContaining({ type: 'visible-update', targetId: 'card-1' }),
+    ]);
   });
 
   it('still calls a caller-provided onFocus handler', () => {

@@ -1,7 +1,7 @@
 use crate::report::{FindingWithEvidence, Report};
 use crate::summary::SessionSummary;
 use session_telemetry_analysis::{QaBookmark, Severity};
-use session_telemetry_protocol::{Event, ReactCommitPhase};
+use session_telemetry_protocol::{Event, ReactCommitPhase, SessionMetadataEvent};
 
 /// Renders a static HTML report from a `Report` — the same structured model `Report::to_json`
 /// serializes, so the HTML and JSON outputs can never drift apart from rendering two separately
@@ -29,14 +29,22 @@ pub fn render_html(report: &Report) -> String {
 </body>
 </html>
 "#,
-        summary_html = render_summary(report.summary, report.clock_uncertainty_ms),
+        summary_html = render_summary(
+            report.summary,
+            report.clock_uncertainty_ms,
+            report.device_metadata
+        ),
         findings_html = render_findings(&report.findings),
         bookmarks_html = render_bookmarks(report.bookmarks),
         timeline_html = render_timeline(report.events),
     )
 }
 
-fn render_summary(summary: &SessionSummary, clock_uncertainty_ms: Option<f64>) -> String {
+fn render_summary(
+    summary: &SessionSummary,
+    clock_uncertainty_ms: Option<f64>,
+    device_metadata: Option<&SessionMetadataEvent>,
+) -> String {
     let duration = match summary.duration_ms() {
         Some(duration_ms) => format!("{duration_ms} ms"),
         None => "n/a".to_string(),
@@ -45,6 +53,21 @@ fn render_summary(summary: &SessionSummary, clock_uncertainty_ms: Option<f64>) -
         Some(uncertainty_ms) => {
             format!("<dt>Clock uncertainty</dt><dd>±{uncertainty_ms:.0} ms</dd>\n")
         }
+        None => String::new(),
+    };
+    let device_row = match device_metadata {
+        Some(metadata) => format!(
+            "<dt>Device</dt><dd>{} (Android {}){}</dd>\n",
+            escape_html(&metadata.device_model),
+            escape_html(&metadata.os_version),
+            match (&metadata.app_version, &metadata.build_type) {
+                (Some(version), Some(build)) =>
+                    format!(" — app {} ({})", escape_html(version), escape_html(build)),
+                (Some(version), None) => format!(" — app {}", escape_html(version)),
+                (None, Some(build)) => format!(" — {}", escape_html(build)),
+                (None, None) => String::new(),
+            }
+        ),
         None => String::new(),
     };
 
@@ -62,6 +85,7 @@ fn render_summary(summary: &SessionSummary, clock_uncertainty_ms: Option<f64>) -
          <dt>Duration</dt><dd>{duration}</dd>\n\
          <dt>Lost events</dt><dd>{}</dd>\n\
          {uncertainty_row}\
+         {device_row}\
          </dl>",
         summary.event_count,
         summary.remote_input_count,
@@ -204,6 +228,8 @@ const EVENT_TYPE_FILTERS: &[(&str, &str)] = &[
     ("react-commit", "React commit"),
     ("frame-timing", "Delayed frame"),
     ("clock-sync", "Clock sync"),
+    ("visible-update", "Visible update"),
+    ("session-metadata", "Session metadata"),
 ];
 
 fn event_type_tag(event: &Event) -> &'static str {
@@ -217,6 +243,8 @@ fn event_type_tag(event: &Event) -> &'static str {
         Event::ReactCommit(_) => "react-commit",
         Event::FrameTiming(_) => "frame-timing",
         Event::ClockSync(_) => "clock-sync",
+        Event::VisibleUpdate(_) => "visible-update",
+        Event::SessionMetadata(_) => "session-metadata",
     }
 }
 
@@ -335,6 +363,12 @@ fn describe_event(event: &Event) -> String {
         ),
         Event::FrameTiming(event) => format!("Delayed frame ({} ms)", event.duration_ms),
         Event::ClockSync(_) => "Clock sync sample".to_string(),
+        Event::VisibleUpdate(event) => format!("Visible update: {}", escape_html(&event.target_id)),
+        Event::SessionMetadata(event) => format!(
+            "Session metadata: {} (Android {})",
+            escape_html(&event.device_model),
+            escape_html(&event.os_version)
+        ),
     }
 }
 

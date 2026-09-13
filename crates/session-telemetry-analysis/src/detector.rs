@@ -6,6 +6,9 @@ use std::collections::HashMap;
 pub const HIGH_LATENCY_FOCUS_CHANGE_DETECTOR: &str = "high-latency-focus-change";
 pub const HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION: u32 = 1;
 
+pub const HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR: &str = "high-latency-visible-update";
+pub const HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR_VERSION: u32 = 1;
+
 pub const REPEATED_REDUX_DISPATCH_DETECTOR: &str = "repeated-redux-dispatch";
 pub const REPEATED_REDUX_DISPATCH_DETECTOR_VERSION: u32 = 1;
 
@@ -72,9 +75,11 @@ fn finding_id(detector: &'static str, sequence_start: u64, sequence_end: u64) ->
     format!("{detector}-{sequence_start}-{sequence_end}")
 }
 
-/// Flags interactions whose input-to-focus-change latency crosses a threshold, scoped to
-/// focus-change latency for now (see `interaction.rs` for why). The 100ms/300ms thresholds are
-/// placeholders pending real device measurements, not values anyone has actually measured.
+/// Flags interactions whose input-to-focus-change latency crosses a threshold — an earlier,
+/// intermediate signal than `detect_high_latency_visible_updates` below (see `interaction.rs`'s
+/// doc comment for why the two are kept separate rather than one replacing the other). The
+/// 100ms/300ms thresholds are placeholders pending real device measurements, not values anyone
+/// has actually measured.
 pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<Finding> {
     const WARNING_THRESHOLD_MS: f64 = 100.0;
     const CRITICAL_THRESHOLD_MS: f64 = 300.0;
@@ -118,6 +123,64 @@ pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<F
                     },
                 ],
                 summary: format!("Input-to-focus-change latency was {latency_ms:.0}ms."),
+            })
+        })
+        .collect()
+}
+
+/// Flags interactions whose input-to-visible-update latency crosses a threshold — the headline
+/// metric plan.md's own example trace leads with ("214 ms to visible update"), more meaningful
+/// than focus-change latency alone because it reflects when the user actually saw something
+/// change, not just when application state settled. Relies on `VisibleUpdateEvent`, itself a
+/// best-effort proxy (see its own doc comment) — this detector inherits that same uncertainty,
+/// not a frame-accurate guarantee. The 100ms/300ms thresholds are placeholders pending real
+/// device measurements, same caveat as every other detector's thresholds.
+pub fn detect_high_latency_visible_updates(windows: &[InteractionWindow]) -> Vec<Finding> {
+    const WARNING_THRESHOLD_MS: f64 = 100.0;
+    const CRITICAL_THRESHOLD_MS: f64 = 300.0;
+
+    windows
+        .iter()
+        .filter_map(|window| {
+            let latency_ms = window.visible_update_latency_ms()?;
+            let severity = if latency_ms >= CRITICAL_THRESHOLD_MS {
+                Severity::Critical
+            } else if latency_ms >= WARNING_THRESHOLD_MS {
+                Severity::Warning
+            } else {
+                return None;
+            };
+
+            let visible_update = window
+                .visible_update
+                .as_ref()
+                .expect("visible_update_latency_ms() returned Some");
+            let sequence_start = window.input.sequence;
+            let sequence_end = visible_update.sequence;
+            Some(Finding {
+                id: finding_id(
+                    HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR,
+                    sequence_start,
+                    sequence_end,
+                ),
+                detector: HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR,
+                detector_version: HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR_VERSION,
+                severity,
+                sequence_start,
+                sequence_end,
+                value: latency_ms,
+                unit: "ms",
+                thresholds: vec![
+                    Threshold {
+                        name: "warningMs",
+                        value: WARNING_THRESHOLD_MS,
+                    },
+                    Threshold {
+                        name: "criticalMs",
+                        value: CRITICAL_THRESHOLD_MS,
+                    },
+                ],
+                summary: format!("Input-to-visible-update latency was {latency_ms:.0}ms."),
             })
         })
         .collect()
@@ -474,7 +537,59 @@ pub fn detect_excessive_commits_during_rapid_focus_movement(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use session_telemetry_protocol::{FocusEvent, RemoteInputEvent};
+    use session_telemetry_protocol::{FocusEvent, RemoteInputEvent, VisibleUpdateEvent};
+
+    fn window_with_visible_update_latency(latency_ms: f64) -> InteractionWindow {
+        InteractionWindow {
+            input: RemoteInputEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                key: "right".to_string(),
+            },
+            focus: None,
+            visible_update: Some(VisibleUpdateEvent {
+                sequence: 1,
+                timestamp: latency_ms,
+                target_id: "card-2".to_string(),
+            }),
+            other_events: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn visible_update_below_the_warning_threshold_produces_no_finding() {
+        assert_eq!(
+            detect_high_latency_visible_updates(&[window_with_visible_update_latency(50.0)]),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn visible_update_between_the_thresholds_is_a_warning() {
+        let findings =
+            detect_high_latency_visible_updates(&[window_with_visible_update_latency(150.0)]);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Warning);
+        assert_eq!(findings[0].value, 150.0);
+        assert_eq!(findings[0].unit, "ms");
+        assert_eq!(findings[0].detector, HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR);
+    }
+
+    #[test]
+    fn visible_update_at_or_above_the_critical_threshold_is_critical() {
+        let findings =
+            detect_high_latency_visible_updates(&[window_with_visible_update_latency(300.0)]);
+
+        assert_eq!(findings[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn a_window_with_no_visible_update_produces_no_visible_update_finding() {
+        let window = window_with_latency(150.0);
+
+        assert_eq!(detect_high_latency_visible_updates(&[window]), vec![]);
+    }
 
     fn window_with_latency(latency_ms: f64) -> InteractionWindow {
         InteractionWindow {
@@ -489,6 +604,7 @@ mod tests {
                 target_id: "card-2".to_string(),
                 previous_target_id: None,
             }),
+            visible_update: None,
             other_events: Vec::new(),
         }
     }
@@ -527,6 +643,7 @@ mod tests {
                 key: "right".to_string(),
             },
             focus: None,
+            visible_update: None,
             other_events: Vec::new(),
         };
 
@@ -551,6 +668,7 @@ mod tests {
                 key: "right".to_string(),
             },
             focus: None,
+            visible_update: None,
             other_events: vec![dispatch(1, "catalog/itemFocused")],
         };
 
@@ -566,6 +684,7 @@ mod tests {
                 key: "right".to_string(),
             },
             focus: None,
+            visible_update: None,
             other_events: vec![
                 dispatch(1, "catalog/itemFocused"),
                 dispatch(2, "catalog/itemFocused"),
@@ -591,6 +710,7 @@ mod tests {
                 key: "right".to_string(),
             },
             focus: None,
+            visible_update: None,
             other_events: vec![
                 dispatch(1, "catalog/itemFocused"),
                 dispatch(2, "nav/moveRight"),
@@ -612,6 +732,7 @@ mod tests {
                 key: "right".to_string(),
             },
             focus: None,
+            visible_update: None,
             other_events,
         }
     }

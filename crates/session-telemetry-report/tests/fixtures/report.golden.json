@@ -11,6 +11,8 @@
     "reactCommitCount": 0,
     "frameTimingCount": 0,
     "clockSyncCount": 0,
+    "visibleUpdateCount": 0,
+    "sessionMetadataCount": 0,
     "lossCount": 1,
     "sequenceStart": 0,
     "sequenceEnd": 1,
@@ -18,6 +20,7 @@
     "timestampEnd": 214.0
   },
   "clockUncertaintyMs": 0.0,
+  "deviceMetadata": null,
   "findings": [
     {
       "id": "high-latency-focus-change-0-1",

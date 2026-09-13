@@ -1,20 +1,23 @@
-use session_telemetry_protocol::{Event, FocusEvent, RemoteInputEvent};
+use session_telemetry_protocol::{Event, FocusEvent, RemoteInputEvent, VisibleUpdateEvent};
 
 /// One remote-control press and whatever happened after it, up to (but not including) the next
-/// remote input. `focus` is the resulting focus change if one occurred; `None` means no focus
-/// change was observed for this specific input before either another input arrived or the
+/// remote input. `focus` is the resulting focus change if one occurred; `visible_update` is the
+/// best-effort confirmation that change was scheduled to paint (see `VisibleUpdateEvent`'s own
+/// doc comment for why this is approximate, not frame-accurate). Either being `None` means that
+/// signal wasn't observed for this specific input before either another input arrived or the
 /// session ended.
 ///
-/// This measures input-to-*focus-change* latency. It is not yet input-to-*visible-update*
-/// latency (the more meaningful metric) — that needs an explicit visible-update marker, which
-/// isn't decided yet. Don't conflate the two when reading results from this module.
+/// Both `latency_ms()` (input-to-focus-change) and `visible_update_latency_ms()`
+/// (input-to-visible-update, the more meaningful metric per plan.md's own example trace) stay
+/// available side by side — don't conflate the two when reading results from this module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InteractionWindow {
     pub input: RemoteInputEvent,
     pub focus: Option<FocusEvent>,
-    /// Everything else (Redux dispatches, interaction markers) that fell between the input and
-    /// the resulting focus change (or the window's end) — evidence for detectors like "repeated
-    /// Redux actions during one remote-input burst".
+    pub visible_update: Option<VisibleUpdateEvent>,
+    /// Everything else (Redux dispatches, interaction markers, frame timings) that fell between
+    /// the input and the window's end — evidence for detectors like "repeated Redux actions
+    /// during one remote-input burst" or "commit overlapping a delayed frame".
     pub other_events: Vec<Event>,
 }
 
@@ -24,11 +27,20 @@ impl InteractionWindow {
     pub fn latency_ms(&self) -> Option<f64> {
         Some(self.focus.as_ref()?.timestamp - self.input.timestamp)
     }
+
+    /// Milliseconds from remote input to the resulting visible update, or `None` if none was
+    /// observed for this input.
+    pub fn visible_update_latency_ms(&self) -> Option<f64> {
+        Some(self.visible_update.as_ref()?.timestamp - self.input.timestamp)
+    }
 }
 
-/// Groups events into one window per remote input. A window ends at the next `Focus` event (the
-/// window's result) or at the next `RemoteInput` event (a new input arrived before this one
-/// produced a focus change), whichever comes first.
+/// Groups events into one window per remote input. A window ends at the next `VisibleUpdate`
+/// event (the window's ultimate result) or at the next `RemoteInput` event (a new input arrived
+/// before this one produced a visible update), whichever comes first. `Focus` no longer ends the
+/// window on its own — it's recorded and scanning continues, so events between a focus change
+/// and its eventual visible update (redux dispatches, react commits, frame timings) still land
+/// in this window rather than leaking into the next one.
 pub fn build_interaction_windows(events: &[Event]) -> Vec<InteractionWindow> {
     let mut windows = Vec::new();
 
@@ -39,12 +51,16 @@ pub fn build_interaction_windows(events: &[Event]) -> Vec<InteractionWindow> {
 
         let mut other_events = Vec::new();
         let mut focus = None;
+        let mut visible_update = None;
 
         for later_event in &events[start + 1..] {
             match later_event {
                 Event::RemoteInput(_) => break,
                 Event::Focus(focus_event) => {
                     focus = Some(focus_event.clone());
+                }
+                Event::VisibleUpdate(visible_update_event) => {
+                    visible_update = Some(visible_update_event.clone());
                     break;
                 }
                 other => other_events.push(other.clone()),
@@ -54,6 +70,7 @@ pub fn build_interaction_windows(events: &[Event]) -> Vec<InteractionWindow> {
         windows.push(InteractionWindow {
             input: input.clone(),
             focus,
+            visible_update,
             other_events,
         });
     }
@@ -80,6 +97,14 @@ mod tests {
             timestamp,
             target_id: target_id.to_string(),
             previous_target_id: None,
+        })
+    }
+
+    fn visible_update(sequence: u64, timestamp: f64, target_id: &str) -> Event {
+        Event::VisibleUpdate(VisibleUpdateEvent {
+            sequence,
+            timestamp,
+            target_id: target_id.to_string(),
         })
     }
 
@@ -133,6 +158,60 @@ mod tests {
         let windows = build_interaction_windows(&events);
 
         assert_eq!(windows[0].other_events, vec![dispatch, marker]);
+    }
+
+    #[test]
+    fn pairs_an_input_with_its_resulting_visible_update() {
+        let events = vec![
+            remote_input(0, 0.0, "right"),
+            focus(1, 4.0, "card-2"),
+            visible_update(2, 214.0, "card-2"),
+        ];
+
+        let windows = build_interaction_windows(&events);
+
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].latency_ms(), Some(4.0));
+        assert_eq!(windows[0].visible_update_latency_ms(), Some(214.0));
+    }
+
+    #[test]
+    fn events_between_focus_and_visible_update_are_still_collected_as_context() {
+        let dispatch = Event::ReduxDispatch(ReduxDispatchEvent {
+            sequence: 2,
+            timestamp: 10.0,
+            action_type: "catalog/itemLoaded".to_string(),
+            duration_ms: 2.0,
+        });
+        let events = vec![
+            remote_input(0, 0.0, "right"),
+            focus(1, 4.0, "card-2"),
+            dispatch.clone(),
+            visible_update(3, 214.0, "card-2"),
+        ];
+
+        let windows = build_interaction_windows(&events);
+
+        assert_eq!(windows[0].other_events, vec![dispatch]);
+        assert_eq!(windows[0].visible_update_latency_ms(), Some(214.0));
+    }
+
+    #[test]
+    fn a_window_with_no_visible_update_before_the_next_input_has_no_result() {
+        let events = vec![
+            remote_input(0, 0.0, "right"),
+            focus(1, 4.0, "card-2"),
+            remote_input(2, 50.0, "right"),
+            visible_update(3, 214.0, "card-2"),
+        ];
+
+        let windows = build_interaction_windows(&events);
+
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].visible_update, None);
+        assert_eq!(windows[0].visible_update_latency_ms(), None);
+        // The second input claims the visible update instead.
+        assert_eq!(windows[1].visible_update_latency_ms(), Some(164.0));
     }
 
     #[test]
