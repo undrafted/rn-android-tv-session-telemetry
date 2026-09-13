@@ -10,7 +10,8 @@ flowchart LR
         Buffer["Event buffer"]
         FrameTiming["Native frame timing<br/>FrameMetrics"]
         GlobalFocus["Native global focus listener<br/>ViewTreeObserver + nativeID"]
-        Collector["Android collector<br/>lifecycle<br/>(planned)"]
+        Lifecycle["Native lifecycle listener<br/>ActivityLifecycleCallbacks, automatic"]
+        ResourceSampling["Native resource sampler<br/>HandlerThread, explicit app-toggled window"]
         Writer["On-device session writer<br/>.rnst chunks (JNI)"]
         App --> Lib
         App --> Network --> Lib
@@ -18,9 +19,10 @@ flowchart LR
         App --> ReactTiming --> Lib
         FrameTiming --> Lib
         GlobalFocus --> Lib
+        Lifecycle --> Lib
+        ResourceSampling --> Lib
         Lib --> Buffer
         Lib -->|native bridge: events · start/finish| Writer
-        Collector -.-> Writer
     end
 
     subgraph Transport["ADB transport"]

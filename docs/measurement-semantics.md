@@ -1,6 +1,7 @@
 ### Measurement semantics
 
-See [signal flow](signals.md) for the capture and analysis diagram.
+See [the signals diagram](signals.md) for the whole capture-to-report pipeline at a glance
+before reading the per-signal detail below.
 
 | Topic               | Behavior                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -32,13 +33,15 @@ Render-to-commit elapsed time can include pauses; it's separate from render work
 duration, and frame presentation. Overlap analysis needs valid renderer timestamps and never
 establishes causation.
 
-| Setup             | Behavior                                                                                                                |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Root registration | `withTelemetryRoot(App, appName)` wraps the app in a library-owned `Profiler` in profiling builds.                      |
-| Renderer          | `withReactProfiling` selects the Fabric profiling renderer in Metro; the production renderer emits nothing.             |
-| Lifecycle         | `stop()` disables recording but keeps the root mounted, preserving state; reinstall resumes through it.                 |
-| Scope             | Android TV, Fabric/Hermes, RN TV 0.87.1-0, React 19.2.3. Root commits only, no component/props/state. Overhead applies. |
-| TV check          | Seven commits preserved `renderStartMs ≤ commitTimeMs ≤ timestamp`. Mount callback arrived ~21ms after commit.          |
+| Setup               | Behavior                                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Root registration   | `withTelemetryRoot(App, appName)` wraps the app in a library-owned `Profiler` in profiling builds.                      |
+| Renderer            | `withReactProfiling` selects the Fabric profiling renderer in Metro; the production renderer emits nothing.             |
+| Recording lifecycle | `stop()` disables recording but keeps the root mounted, preserving state; reinstall resumes through it.                 |
+| Scope               | Android TV, Fabric/Hermes, RN TV 0.87.1-0, React 19.2.3. Root commits only, no component/props/state. Overhead applies. |
+
+Verified on a real TV capture: seven commits preserved `renderStartMs ≤ commitTimeMs ≤ timestamp`;
+the mount callback arrived ~21ms after commit.
 
 ### Signal capture
 
