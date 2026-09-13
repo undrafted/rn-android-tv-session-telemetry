@@ -6,10 +6,12 @@ flowchart LR
         Lib["Telemetry library<br/>+ Redux middleware & selector wrapper"]
         Buffer["Event buffer"]
         FrameTiming["Native frame timing<br/>FrameMetrics"]
+        GlobalFocus["Native global focus listener<br/>ViewTreeObserver + nativeID"]
         Collector["Android collector<br/>lifecycle<br/>(planned)"]
         Writer["On-device session writer<br/>.rnst chunks (JNI)"]
         App --> Lib
         FrameTiming --> Lib
+        GlobalFocus --> Lib
         Lib --> Buffer
         Lib -->|native bridge: events · start/finish| Writer
         Collector -.-> Writer

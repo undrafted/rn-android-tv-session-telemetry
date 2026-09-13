@@ -22,7 +22,7 @@ export type {
   SessionMetadataEvent,
   SelectorEvent,
 } from './events.js';
-export { FocusableView, type FocusableViewProps } from './FocusableView.js';
+export { startGlobalFocusMonitor } from './globalFocus.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
 export { startStallMonitor, type StallMonitorOptions } from './stall.js';
 export { onProfilerRender } from './profiler.js';

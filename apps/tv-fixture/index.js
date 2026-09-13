@@ -3,7 +3,11 @@
  */
 
 import { AppRegistry } from 'react-native';
-import { SessionTelemetry, startFrameTimingMonitor } from '@rn-session-telemetry/react-native';
+import {
+  SessionTelemetry,
+  startFrameTimingMonitor,
+  startGlobalFocusMonitor,
+} from '@rn-session-telemetry/react-native';
 import { runOverheadBenchmark } from './benchmark';
 import App from './App';
 import { name as appName } from './app.json';
@@ -30,6 +34,7 @@ if (__RN_SESSION_TELEMETRY_ENABLED__) {
     // babel-plugin-rnst-profiling-flag.js), so 'profiling' here is accurate, not guessed.
     SessionTelemetry.install({ buildType: 'profiling' });
     startFrameTimingMonitor();
+    startGlobalFocusMonitor();
   }
 }
 

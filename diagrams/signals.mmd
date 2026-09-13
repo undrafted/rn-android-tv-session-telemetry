@@ -3,8 +3,8 @@
 %% see ../docs/measurement-semantics.md
 flowchart TD
     RemoteInput["Remote input<br/>via TVEventHandler"] --> Timeline["Synchronized timeline"]
-    Focus["Focus changes<br/>via recordFocus() (FocusableView)"] --> Timeline
-    VisibleUpdate["Visible-update marker<br/>via recordVisibleUpdate(), one<br/>requestAnimationFrame after focus<br/>(best-effort, not frame-accurate)"] --> Timeline
+    Focus["Focus changes<br/>zero-footprint: native global focus<br/>listener + nativeID, no wrapper needed"] --> Timeline
+    VisibleUpdate["Visible-update marker<br/>same native listener, posted after<br/>focus (best-effort, not frame-accurate)"] --> Timeline
     InteractionMarker["Interaction markers<br/>via mark() (explicit app call)"] --> Timeline
     Redux["Redux dispatches<br/>via createTelemetryMiddleware"] --> Timeline
     Selector["Redux selector invocations<br/>via telemetrySelector() wrapper<br/>(transparent passthrough)"] --> Timeline

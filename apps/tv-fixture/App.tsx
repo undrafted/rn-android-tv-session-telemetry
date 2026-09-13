@@ -4,16 +4,18 @@
  * Two side-by-side focusable cards used to validate that a remote-control press, the resulting
  * focus transition, and its visible-update confirmation all show up as events — a DPAD_RIGHT/
  * DPAD_LEFT press has somewhere real to move focus to, unlike a single-card screen where no
- * focus change could ever occur. Also wired to a minimal Redux store (store.ts) demonstrating
- * M7's selector instrumentation. Later grows into a deliberately inefficient demonstration app.
+ * focus change could ever occur. Focus/visible-update capture is zero-footprint: a plain
+ * `Pressable` with `nativeID` is all that's needed (see index.js's startGlobalFocusMonitor()) —
+ * no telemetry-specific wrapper component or onFocus/onBlur handler required. Also wired to a
+ * minimal Redux store (store.ts) demonstrating M7's selector instrumentation. Later grows into a
+ * deliberately inefficient demonstration app.
  *
  * @format
  */
 
 import { Profiler, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
-  FocusableView,
   SessionTelemetry,
   onProfilerRender,
 } from '@rn-session-telemetry/react-native';
@@ -33,6 +35,8 @@ function Card({
   label: string;
   hasTVPreferredFocus?: boolean;
 }) {
+  // Local visual state only — unrelated to telemetry, which the native global focus listener
+  // now handles entirely on its own via this Pressable's nativeID.
   const [focused, setFocused] = useState(false);
   // Subscribes to the store via the *stable* selector only — useSyncExternalStore requires its
   // snapshot to be reference-stable when nothing relevant changed, which selectVisibleItemIds
@@ -43,8 +47,8 @@ function Card({
   const visibleItemIds = selectVisibleItemIds(store.getState());
 
   return (
-    <FocusableView
-      id={id}
+    <Pressable
+      nativeID={id}
       hasTVPreferredFocus={hasTVPreferredFocus}
       onFocus={() => {
         setFocused(true);
@@ -58,7 +62,7 @@ function Card({
       <Text style={styles.detail}>
         {itemCount} items · {visibleItemIds.length} visible
       </Text>
-    </FocusableView>
+    </Pressable>
   );
 }
 
