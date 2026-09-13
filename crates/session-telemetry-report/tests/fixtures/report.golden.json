@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "summary": {
+    "eventCount": 2,
+    "remoteInputCount": 1,
+    "focusCount": 1,
+    "interactionMarkerCount": 0,
+    "reduxDispatchCount": 0,
+    "networkCount": 0,
+    "jsStallCount": 0,
+    "reactCommitCount": 0,
+    "frameTimingCount": 0,
+    "clockSyncCount": 0,
+    "lossCount": 1,
+    "sequenceStart": 0,
+    "sequenceEnd": 1,
+    "timestampStart": 0.0,
+    "timestampEnd": 214.0
+  },
+  "clockUncertaintyMs": 0.0,
+  "findings": [
+    {
+      "id": "high-latency-focus-change-0-1",
+      "detector": "high-latency-focus-change",
+      "detectorVersion": 1,
+      "severity": "warning",
+      "sequenceStart": 0,
+      "sequenceEnd": 1,
+      "value": 214.0,
+      "unit": "ms",
+      "thresholds": [
+        {
+          "name": "warningMs",
+          "value": 100.0
+        }
+      ],
+      "summary": "Input-to-focus-change latency was 214ms.",
+      "evidence": [
+        {
+          "type": "remote-input",
+          "sequence": 0,
+          "timestamp": 0.0,
+          "key": "right"
+        },
+        {
+          "type": "focus",
+          "sequence": 1,
+          "timestamp": 214.0,
+          "targetId": "card-2",
+          "previousTargetId": null
+        }
+      ]
+    }
+  ],
+  "bookmarks": [
+    {
+      "workstationTimestamp": 1700000000100.0,
+      "sessionTimestamp": 100.0,
+      "uncertaintyMs": 0.0,
+      "label": "carousel stopped responding"
+    }
+  ]
+}

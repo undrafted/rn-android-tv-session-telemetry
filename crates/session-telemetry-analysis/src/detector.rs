@@ -1,4 +1,5 @@
 use crate::interaction::InteractionWindow;
+use serde::Serialize;
 use session_telemetry_protocol::Event;
 use std::collections::HashMap;
 
@@ -26,18 +27,34 @@ pub const EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR: &str =
     "excessive-commits-during-rapid-focus-movement";
 pub const EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Severity {
     Warning,
     Critical,
 }
 
+/// One threshold value a finding was evaluated against, named so a JSON consumer can tell which
+/// threshold it is without depending on detector-specific knowledge (e.g. `"criticalMs"`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Threshold {
+    pub name: &'static str,
+    pub value: f64,
+}
+
 /// A finding: which detector produced it, at what version, how severe, the exact sequence
-/// range it covers, and the measured value. Capability requirements and loss/uncertainty
-/// disclosure aren't included yet — nothing populates that data anywhere in the workspace yet
-/// either.
-#[derive(Debug, Clone, PartialEq)]
+/// range it covers, the measured value, the threshold(s) it crossed, and a plain-language
+/// summary. Loss/uncertainty disclosure lives at the report level
+/// (`session_telemetry_report::Report::clock_uncertainty_ms`, `SessionSummary::loss_count`), not
+/// per finding, and likewise capability context comes from `SessionSummary`'s per-event-type
+/// counts rather than a field here — a consumer can already see which signals produced zero
+/// events without this struct duplicating that.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Finding {
+    /// Stable across re-analysis of the same session: `"{detector}-{sequence_start}-{sequence_end}"`.
+    pub id: String,
     pub detector: &'static str,
     pub detector_version: u32,
     pub severity: Severity,
@@ -47,6 +64,12 @@ pub struct Finding {
     /// Generic rather than e.g. `latency_ms` because not every detector measures a duration.
     pub value: f64,
     pub unit: &'static str,
+    pub thresholds: Vec<Threshold>,
+    pub summary: String,
+}
+
+fn finding_id(detector: &'static str, sequence_start: u64, sequence_end: u64) -> String {
+    format!("{detector}-{sequence_start}-{sequence_end}")
 }
 
 /// Flags interactions whose input-to-focus-change latency crosses a threshold, scoped to
@@ -69,14 +92,32 @@ pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<F
             };
 
             let focus = window.focus.as_ref().expect("latency_ms() returned Some");
+            let sequence_start = window.input.sequence;
+            let sequence_end = focus.sequence;
             Some(Finding {
+                id: finding_id(
+                    HIGH_LATENCY_FOCUS_CHANGE_DETECTOR,
+                    sequence_start,
+                    sequence_end,
+                ),
                 detector: HIGH_LATENCY_FOCUS_CHANGE_DETECTOR,
                 detector_version: HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION,
                 severity,
-                sequence_start: window.input.sequence,
-                sequence_end: focus.sequence,
+                sequence_start,
+                sequence_end,
                 value: latency_ms,
                 unit: "ms",
+                thresholds: vec![
+                    Threshold {
+                        name: "warningMs",
+                        value: WARNING_THRESHOLD_MS,
+                    },
+                    Threshold {
+                        name: "criticalMs",
+                        value: CRITICAL_THRESHOLD_MS,
+                    },
+                ],
+                summary: format!("Input-to-focus-change latency was {latency_ms:.0}ms."),
             })
         })
         .collect()
@@ -105,14 +146,25 @@ pub fn detect_repeated_redux_dispatches(windows: &[InteractionWindow]) -> Vec<Fi
             if sequences.len() < REPEAT_THRESHOLD {
                 continue;
             }
+            let sequence_start = window.input.sequence;
+            let sequence_end = *sequences.iter().max().expect("non-empty");
+            let count = sequences.len();
             findings.push(Finding {
+                id: finding_id(REPEATED_REDUX_DISPATCH_DETECTOR, sequence_start, sequence_end),
                 detector: REPEATED_REDUX_DISPATCH_DETECTOR,
                 detector_version: REPEATED_REDUX_DISPATCH_DETECTOR_VERSION,
                 severity: Severity::Warning,
-                sequence_start: window.input.sequence,
-                sequence_end: *sequences.iter().max().expect("non-empty"),
-                value: sequences.len() as f64,
+                sequence_start,
+                sequence_end,
+                value: count as f64,
                 unit: "dispatches",
+                thresholds: vec![Threshold {
+                    name: "repeatThreshold",
+                    value: REPEAT_THRESHOLD as f64,
+                }],
+                summary: format!(
+                    "The same Redux action type was dispatched {count} times within one interaction."
+                ),
             });
         }
     }
@@ -141,14 +193,29 @@ pub fn detect_js_stalls_overlapping_interactions(windows: &[InteractionWindow]) 
             } else {
                 Severity::Warning
             };
+            let sequence_start = window.input.sequence;
+            let sequence_end = stall.sequence;
             findings.push(Finding {
+                id: finding_id(
+                    JS_STALL_DURING_INTERACTION_DETECTOR,
+                    sequence_start,
+                    sequence_end,
+                ),
                 detector: JS_STALL_DURING_INTERACTION_DETECTOR,
                 detector_version: JS_STALL_DURING_INTERACTION_DETECTOR_VERSION,
                 severity,
-                sequence_start: window.input.sequence,
-                sequence_end: stall.sequence,
+                sequence_start,
+                sequence_end,
                 value: stall.duration_ms,
                 unit: "ms",
+                thresholds: vec![Threshold {
+                    name: "criticalMs",
+                    value: CRITICAL_THRESHOLD_MS,
+                }],
+                summary: format!(
+                    "A {:.0}ms JavaScript stall overlapped this interaction.",
+                    stall.duration_ms
+                ),
             });
         }
     }
@@ -190,14 +257,35 @@ pub fn detect_repeated_network_requests(windows: &[InteractionWindow]) -> Vec<Fi
             if sequences.len() < REPEAT_THRESHOLD {
                 continue;
             }
+            let sequence_start = window.input.sequence;
+            let sequence_end = *sequences.iter().max().expect("non-empty");
+            let count = sequences.len();
             findings.push(Finding {
+                id: finding_id(
+                    REPEATED_NETWORK_REQUEST_DETECTOR,
+                    sequence_start,
+                    sequence_end,
+                ),
                 detector: REPEATED_NETWORK_REQUEST_DETECTOR,
                 detector_version: REPEATED_NETWORK_REQUEST_DETECTOR_VERSION,
                 severity: Severity::Warning,
-                sequence_start: window.input.sequence,
-                sequence_end: *sequences.iter().max().expect("non-empty"),
-                value: sequences.len() as f64,
+                sequence_start,
+                sequence_end,
+                value: count as f64,
                 unit: "requests",
+                thresholds: vec![
+                    Threshold {
+                        name: "repeatThreshold",
+                        value: REPEAT_THRESHOLD as f64,
+                    },
+                    Threshold {
+                        name: "streamDurationMs",
+                        value: STREAM_DURATION_THRESHOLD_MS,
+                    },
+                ],
+                summary: format!(
+                    "The same network request was made {count} times within one interaction."
+                ),
             });
         }
     }
@@ -236,14 +324,26 @@ pub fn detect_react_commits_overlapping_delayed_frames(
                     continue;
                 }
 
+                let sequence_start = commit.sequence.min(frame.sequence);
+                let sequence_end = commit.sequence.max(frame.sequence);
                 findings.push(Finding {
+                    id: finding_id(
+                        REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR,
+                        sequence_start,
+                        sequence_end,
+                    ),
                     detector: REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR,
                     detector_version: REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR_VERSION,
                     severity: Severity::Warning,
-                    sequence_start: commit.sequence.min(frame.sequence),
-                    sequence_end: commit.sequence.max(frame.sequence),
+                    sequence_start,
+                    sequence_end,
                     value: frame.duration_ms,
                     unit: "ms",
+                    thresholds: Vec::new(),
+                    summary: format!(
+                        "A React commit overlapped a delayed frame lasting {:.0}ms.",
+                        frame.duration_ms
+                    ),
                 });
             }
         }
@@ -270,14 +370,26 @@ pub fn detect_network_completions_followed_by_commits(
                 continue;
             };
 
+            let sequence_start = request.sequence;
+            let sequence_end = commit.sequence;
+            let delay_ms = commit.timestamp - request.timestamp;
             findings.push(Finding {
+                id: finding_id(
+                    NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR,
+                    sequence_start,
+                    sequence_end,
+                ),
                 detector: NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR,
                 detector_version: NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR_VERSION,
                 severity: Severity::Warning,
-                sequence_start: request.sequence,
-                sequence_end: commit.sequence,
-                value: commit.timestamp - request.timestamp,
+                sequence_start,
+                sequence_end,
+                value: delay_ms,
                 unit: "ms",
+                thresholds: Vec::new(),
+                summary: format!(
+                    "A network completion was immediately followed by a React commit {delay_ms:.0}ms later."
+                ),
             });
         }
     }
@@ -319,15 +431,36 @@ pub fn detect_excessive_commits_during_rapid_focus_movement(
                 .collect();
 
             if commit_sequences.len() >= COMMIT_THRESHOLD {
+                let sequence_start = burst[0].input.sequence;
+                let sequence_end = *commit_sequences.iter().max().expect("checked len above");
+                let count = commit_sequences.len();
                 findings.push(Finding {
+                    id: finding_id(
+                        EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR,
+                        sequence_start,
+                        sequence_end,
+                    ),
                     detector: EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR,
                     detector_version:
                         EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR_VERSION,
                     severity: Severity::Warning,
-                    sequence_start: burst[0].input.sequence,
-                    sequence_end: *commit_sequences.iter().max().expect("checked len above"),
-                    value: commit_sequences.len() as f64,
+                    sequence_start,
+                    sequence_end,
+                    value: count as f64,
                     unit: "commits",
+                    thresholds: vec![
+                        Threshold {
+                            name: "rapidGapMs",
+                            value: RAPID_GAP_MS,
+                        },
+                        Threshold {
+                            name: "commitThreshold",
+                            value: COMMIT_THRESHOLD as f64,
+                        },
+                    ],
+                    summary: format!(
+                        "{count} React commits occurred during a burst of rapid focus movement."
+                    ),
                 });
             }
         }

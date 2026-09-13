@@ -1,20 +1,15 @@
+use crate::report::{FindingWithEvidence, Report};
 use crate::summary::SessionSummary;
-use session_telemetry_analysis::{Finding, QaBookmark, Severity};
+use session_telemetry_analysis::{QaBookmark, Severity};
 use session_telemetry_protocol::{Event, ReactCommitPhase};
 
-/// Renders a static HTML report from a session summary, its findings, the session's raw events,
-/// and any QA bookmarks mapped onto the session timeline. A long session's report must open
-/// with a summary, not attempt to render every event at once — consistent with that, the events
-/// are only ever used to render each finding's own evidence timeline (the events between its
-/// `sequence_start`/`sequence_end`), never dumped in full. A finding's window is inherently
-/// bounded (one remote-input interaction), so this stays bounded regardless of how long the
-/// overall session was.
-pub fn render_html(
-    summary: &SessionSummary,
-    findings: &[Finding],
-    events: &[Event],
-    bookmarks: &[QaBookmark],
-) -> String {
+/// Renders a static HTML report from a `Report` — the same structured model `Report::to_json`
+/// serializes, so the HTML and JSON outputs can never drift apart from rendering two separately
+/// hand-maintained views of the session. `report.events` (the full raw session, not part of the
+/// JSON document) is only used here to render the complete session timeline; every finding's own
+/// evidence timeline comes from `report.findings`, already attached and bounded to that finding's
+/// own window regardless of how long the overall session was.
+pub fn render_html(report: &Report) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -34,17 +29,23 @@ pub fn render_html(
 </body>
 </html>
 "#,
-        summary_html = render_summary(summary),
-        findings_html = render_findings(findings, events),
-        bookmarks_html = render_bookmarks(bookmarks),
-        timeline_html = render_timeline(events),
+        summary_html = render_summary(report.summary, report.clock_uncertainty_ms),
+        findings_html = render_findings(&report.findings),
+        bookmarks_html = render_bookmarks(report.bookmarks),
+        timeline_html = render_timeline(report.events),
     )
 }
 
-fn render_summary(summary: &SessionSummary) -> String {
+fn render_summary(summary: &SessionSummary, clock_uncertainty_ms: Option<f64>) -> String {
     let duration = match summary.duration_ms() {
         Some(duration_ms) => format!("{duration_ms} ms"),
         None => "n/a".to_string(),
+    };
+    let uncertainty_row = match clock_uncertainty_ms {
+        Some(uncertainty_ms) => {
+            format!("<dt>Clock uncertainty</dt><dd>±{uncertainty_ms:.0} ms</dd>\n")
+        }
+        None => String::new(),
     };
 
     format!(
@@ -60,6 +61,7 @@ fn render_summary(summary: &SessionSummary) -> String {
          <dt>Delayed frames</dt><dd>{}</dd>\n\
          <dt>Duration</dt><dd>{duration}</dd>\n\
          <dt>Lost events</dt><dd>{}</dd>\n\
+         {uncertainty_row}\
          </dl>",
         summary.event_count,
         summary.remote_input_count,
@@ -74,14 +76,14 @@ fn render_summary(summary: &SessionSummary) -> String {
     )
 }
 
-fn render_findings(findings: &[Finding], events: &[Event]) -> String {
+fn render_findings(findings: &[FindingWithEvidence]) -> String {
     if findings.is_empty() {
         return "<p class=\"no-findings\">No findings.</p>".to_string();
     }
 
     let rows = findings
         .iter()
-        .map(|finding| render_finding_rows(finding, events))
+        .map(render_finding_rows)
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -94,11 +96,11 @@ fn render_findings(findings: &[Finding], events: &[Event]) -> String {
 }
 
 /// One finding is two table rows: the finding itself, then a full-width row underneath holding
-/// its evidence timeline (empty and omitted if none of the passed `events` fall in its range —
-/// e.g. when a report is rendered from just a `Finding` slice without the events that produced
-/// it, as most of this file's own tests do).
-fn render_finding_rows(finding: &Finding, events: &[Event]) -> String {
-    let (severity_label, severity_class) = match finding.severity {
+/// its evidence timeline (empty and omitted if the finding carries no evidence — e.g. when a
+/// report is built from a `Finding` slice without the events that produced it, as some of this
+/// file's own tests do).
+fn render_finding_rows(finding: &FindingWithEvidence) -> String {
+    let (severity_label, severity_class) = match finding.finding.severity {
         Severity::Warning => ("warning", "warning"),
         Severity::Critical => ("critical", "critical"),
     };
@@ -110,15 +112,15 @@ fn render_finding_rows(finding: &Finding, events: &[Event]) -> String {
          <td><a href=\"#event-{start}\">{start}–{end}</a></td>\
          <td>{} {}</td>\
          </tr>",
-        finding.detector,
-        finding.detector_version,
-        finding.value,
-        finding.unit,
-        start = finding.sequence_start,
-        end = finding.sequence_end,
+        finding.finding.detector,
+        finding.finding.detector_version,
+        finding.finding.value,
+        finding.finding.unit,
+        start = finding.finding.sequence_start,
+        end = finding.finding.sequence_end,
     );
 
-    let evidence = render_evidence_timeline(finding, events);
+    let evidence = render_evidence_timeline(&finding.evidence);
     if evidence.is_empty() {
         return finding_row;
     }
@@ -126,20 +128,11 @@ fn render_finding_rows(finding: &Finding, events: &[Event]) -> String {
     format!("{finding_row}\n<tr class=\"evidence-row\"><td colspan=\"4\">{evidence}</td></tr>")
 }
 
-/// The events between a finding's `sequence_start` and `sequence_end`, rendered as an
-/// elapsed-time list — the same shape as plan.md section 1's example trace ("4 ms Redux action:
-/// catalog/itemFocused"). Elapsed time is relative to the window's own first event, not the
-/// session start, so each finding's timeline reads on its own.
-fn render_evidence_timeline(finding: &Finding, events: &[Event]) -> String {
-    let mut window_events: Vec<&Event> = events
-        .iter()
-        .filter(|event| {
-            let sequence = event.sequence();
-            sequence >= finding.sequence_start && sequence <= finding.sequence_end
-        })
-        .collect();
-    window_events.sort_by_key(|event| event.sequence());
-
+/// A finding's already-attached evidence events, rendered as an elapsed-time list — the same
+/// shape as plan.md section 1's example trace ("4 ms Redux action: catalog/itemFocused").
+/// Elapsed time is relative to the window's own first event, not the session start, so each
+/// finding's timeline reads on its own.
+fn render_evidence_timeline(window_events: &[&Event]) -> String {
     if window_events.is_empty() {
         return String::new();
     }
@@ -387,9 +380,39 @@ const CSS: &str = "
 #[cfg(test)]
 mod tests {
     use super::*;
+    use session_telemetry_analysis::Finding;
     use session_telemetry_protocol::{
         FocusEvent, FrameTimingEvent, InteractionMarkerEvent, RemoteInputEvent,
     };
+
+    fn test_finding(
+        sequence_start: u64,
+        sequence_end: u64,
+        value: f64,
+        unit: &'static str,
+    ) -> Finding {
+        Finding {
+            id: format!("high-latency-focus-change-{sequence_start}-{sequence_end}"),
+            detector: "high-latency-focus-change",
+            detector_version: 1,
+            severity: Severity::Warning,
+            sequence_start,
+            sequence_end,
+            value,
+            unit,
+            thresholds: Vec::new(),
+            summary: String::new(),
+        }
+    }
+
+    fn html_for(
+        summary: &SessionSummary,
+        findings: &[Finding],
+        events: &[Event],
+        bookmarks: &[QaBookmark],
+    ) -> String {
+        render_html(&Report::new(summary, findings, events, bookmarks, None))
+    }
 
     #[test]
     fn renders_summary_numbers() {
@@ -408,7 +431,7 @@ mod tests {
         ];
         let summary = SessionSummary::from_events(&events);
 
-        let html = render_html(&summary, &[], &events, &[]);
+        let html = html_for(&summary, &[], &events, &[]);
 
         assert!(html.contains("<dt>Events</dt><dd>2</dd>"));
         assert!(html.contains("<dt>Duration</dt><dd>214 ms</dd>"));
@@ -423,7 +446,7 @@ mod tests {
         })];
         let summary = SessionSummary::from_events(&events);
 
-        let html = render_html(&summary, &[], &events, &[]);
+        let html = html_for(&summary, &[], &events, &[]);
 
         assert!(html.contains("<dt>Delayed frames</dt><dd>1</dd>"));
         assert!(html.contains("<dt>Network requests</dt><dd>0</dd>"));
@@ -436,21 +459,38 @@ mod tests {
         let mut summary = SessionSummary::from_events(&[]);
         summary.loss_count = 4;
 
-        let html = render_html(&summary, &[], &[], &[]);
+        let html = html_for(&summary, &[], &[], &[]);
 
         assert!(html.contains("<dt>Lost events</dt><dd>4</dd>"));
     }
 
     #[test]
     fn reports_duration_as_na_for_an_empty_session() {
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
+        let html = html_for(&SessionSummary::from_events(&[]), &[], &[], &[]);
 
         assert!(html.contains("<dt>Duration</dt><dd>n/a</dd>"));
     }
 
     #[test]
+    fn renders_the_clock_uncertainty_when_present() {
+        let summary = SessionSummary::from_events(&[]);
+        let report = Report::new(&summary, &[], &[], &[], Some(3.0));
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<dt>Clock uncertainty</dt><dd>±3 ms</dd>"));
+    }
+
+    #[test]
+    fn omits_the_clock_uncertainty_row_when_absent() {
+        let html = html_for(&SessionSummary::from_events(&[]), &[], &[], &[]);
+
+        assert!(!html.contains("Clock uncertainty"));
+    }
+
+    #[test]
     fn renders_no_findings_message_when_empty() {
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
+        let html = html_for(&SessionSummary::from_events(&[]), &[], &[], &[]);
 
         assert!(html.contains("No findings."));
         assert!(!html.contains("<table"));
@@ -458,17 +498,9 @@ mod tests {
 
     #[test]
     fn renders_a_finding_row_with_severity_class() {
-        let findings = vec![Finding {
-            detector: "high-latency-focus-change",
-            detector_version: 1,
-            severity: Severity::Warning,
-            sequence_start: 3,
-            sequence_end: 7,
-            value: 214.0,
-            unit: "ms",
-        }];
+        let findings = vec![test_finding(3, 7, 214.0, "ms")];
 
-        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[], &[]);
+        let html = html_for(&SessionSummary::from_events(&[]), &findings, &[], &[]);
 
         assert!(html.contains("tr class=\"warning\""));
         assert!(html.contains("high-latency-focus-change (v1)"));
@@ -496,17 +528,9 @@ mod tests {
                 previous_target_id: Some("card-1".to_string()),
             }),
         ];
-        let findings = vec![Finding {
-            detector: "high-latency-focus-change",
-            detector_version: 1,
-            severity: Severity::Warning,
-            sequence_start: 3,
-            sequence_end: 5,
-            value: 214.0,
-            unit: "ms",
-        }];
+        let findings = vec![test_finding(3, 5, 214.0, "ms")];
 
-        let html = render_html(
+        let html = html_for(
             &SessionSummary::from_events(&events),
             &findings,
             &events,
@@ -521,17 +545,9 @@ mod tests {
 
     #[test]
     fn omits_the_evidence_row_when_no_events_fall_in_the_findings_range() {
-        let findings = vec![Finding {
-            detector: "high-latency-focus-change",
-            detector_version: 1,
-            severity: Severity::Warning,
-            sequence_start: 3,
-            sequence_end: 7,
-            value: 214.0,
-            unit: "ms",
-        }];
+        let findings = vec![test_finding(3, 7, 214.0, "ms")];
 
-        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[], &[]);
+        let html = html_for(&SessionSummary::from_events(&[]), &findings, &[], &[]);
 
         assert!(!html.contains("<tr class=\"evidence-row\""));
     }
@@ -550,17 +566,9 @@ mod tests {
                 name: "<script>alert(1)</script>".to_string(),
             }),
         ];
-        let findings = vec![Finding {
-            detector: "high-latency-focus-change",
-            detector_version: 1,
-            severity: Severity::Warning,
-            sequence_start: 0,
-            sequence_end: 1,
-            value: 1.0,
-            unit: "ms",
-        }];
+        let findings = vec![test_finding(0, 1, 1.0, "ms")];
 
-        let html = render_html(
+        let html = html_for(
             &SessionSummary::from_events(&events),
             &findings,
             &events,
@@ -573,7 +581,7 @@ mod tests {
 
     #[test]
     fn omits_the_bookmarks_section_when_there_are_none() {
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
+        let html = html_for(&SessionSummary::from_events(&[]), &[], &[], &[]);
 
         assert!(!html.contains("QA bookmarks"));
     }
@@ -587,7 +595,7 @@ mod tests {
             label: "carousel stopped responding".to_string(),
         }];
 
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &bookmarks);
+        let html = html_for(&SessionSummary::from_events(&[]), &[], &[], &bookmarks);
 
         assert!(html.contains("QA bookmarks"));
         assert!(html.contains("4200 ms</span>"));
@@ -596,7 +604,7 @@ mod tests {
 
     #[test]
     fn omits_the_timeline_when_there_are_no_events() {
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
+        let html = html_for(&SessionSummary::from_events(&[]), &[], &[], &[]);
 
         assert!(!html.contains("Session timeline"));
         assert!(!html.contains("<details"));
@@ -618,7 +626,7 @@ mod tests {
             }),
         ];
 
-        let html = render_html(&SessionSummary::from_events(&events), &[], &events, &[]);
+        let html = html_for(&SessionSummary::from_events(&events), &[], &events, &[]);
 
         assert!(html.contains("<summary>Session timeline (2 events)</summary>"));
         assert!(html.contains("id=\"event-0\" data-type=\"remote-input\""));
@@ -652,17 +660,9 @@ mod tests {
 
     #[test]
     fn links_a_findings_sequence_range_to_its_timeline_anchor() {
-        let findings = vec![Finding {
-            detector: "high-latency-focus-change",
-            detector_version: 1,
-            severity: Severity::Warning,
-            sequence_start: 3,
-            sequence_end: 7,
-            value: 214.0,
-            unit: "ms",
-        }];
+        let findings = vec![test_finding(3, 7, 214.0, "ms")];
 
-        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[], &[]);
+        let html = html_for(&SessionSummary::from_events(&[]), &findings, &[], &[]);
 
         assert!(html.contains("<a href=\"#event-3\">3–7</a>"));
     }
@@ -676,7 +676,7 @@ mod tests {
             label: "<script>alert(1)</script>".to_string(),
         }];
 
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &bookmarks);
+        let html = html_for(&SessionSummary::from_events(&[]), &[], &[], &bookmarks);
 
         assert!(!html.contains("<script>alert(1)</script>"));
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));

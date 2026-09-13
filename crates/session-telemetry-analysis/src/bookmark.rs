@@ -12,7 +12,8 @@ use crate::clock::ClockMap;
 /// mapped from the same session shares the same `ClockMap` fit, so in practice this value is
 /// identical across all of one session's bookmarks today — a deliberate simplification, not a
 /// promise that will always hold if this ever supported mapping across multiple fits.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QaBookmark {
     pub workstation_timestamp: f64,
     pub session_timestamp: f64,

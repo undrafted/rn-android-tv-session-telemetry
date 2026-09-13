@@ -17,7 +17,7 @@ pub use detector::{
     REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR,
     REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR_VERSION, REPEATED_NETWORK_REQUEST_DETECTOR,
     REPEATED_NETWORK_REQUEST_DETECTOR_VERSION, REPEATED_REDUX_DISPATCH_DETECTOR,
-    REPEATED_REDUX_DISPATCH_DETECTOR_VERSION, Severity,
+    REPEATED_REDUX_DISPATCH_DETECTOR_VERSION, Severity, Threshold,
     detect_excessive_commits_during_rapid_focus_movement, detect_high_latency_focus_changes,
     detect_js_stalls_overlapping_interactions, detect_network_completions_followed_by_commits,
     detect_react_commits_overlapping_delayed_frames, detect_repeated_network_requests,

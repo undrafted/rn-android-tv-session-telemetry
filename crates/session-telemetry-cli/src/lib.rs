@@ -64,6 +64,12 @@ pub enum Command {
         /// Open the generated HTML report with the OS default application once it's written.
         #[arg(long)]
         open: bool,
+        /// The HTML report is always written; `--format json` additionally writes the complete
+        /// structured document (findings, evidence, bookmarks, thresholds, disclosures) as
+        /// `<session>.json` — the machine-readable contract, for anything scripting against a
+        /// report rather than reading the HTML.
+        #[arg(long, value_enum, default_value_t = ReportFormat::Html)]
+        format: ReportFormat,
     },
     /// Show current recording status.
     Status,
@@ -112,6 +118,12 @@ impl RecordMode {
             RecordMode::Qa => "qa",
         }
     }
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum ReportFormat {
+    Html,
+    Json,
 }
 
 /// A `session-telemetry mark` annotation — plan.md's "QA annotation" row: workstation
@@ -634,6 +646,7 @@ mod tests {
     #[test]
     fn format_findings_includes_detector_severity_and_range() {
         let findings = vec![Finding {
+            id: "high-latency-focus-change-3-7".to_string(),
             detector: "high-latency-focus-change",
             detector_version: 1,
             severity: Severity::Warning,
@@ -641,6 +654,8 @@ mod tests {
             sequence_end: 7,
             value: 214.0,
             unit: "ms",
+            thresholds: Vec::new(),
+            summary: String::new(),
         }];
 
         assert_eq!(

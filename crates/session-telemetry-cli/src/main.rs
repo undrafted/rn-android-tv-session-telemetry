@@ -12,12 +12,12 @@ use session_telemetry_analysis::{
     detect_repeated_redux_dispatches,
 };
 use session_telemetry_cli::{
-    Bookmark, BookmarkFile, Cli, Command, RecordMode, SessionState, format_bookmarks,
+    Bookmark, BookmarkFile, Cli, Command, RecordMode, ReportFormat, SessionState, format_bookmarks,
     format_devices, format_event_loss, format_findings, format_mark_confirmation,
     format_record_started, format_status, format_stop_summary, format_watch_line, opener_command,
     resolve_latest_session_file,
 };
-use session_telemetry_report::{SessionSummary, render_html};
+use session_telemetry_report::{Report, SessionSummary, render_html};
 use session_telemetry_session::Chunk;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, exit};
@@ -40,7 +40,11 @@ fn main() {
         Command::Status => run_status(),
         Command::Watch { interval_secs } => run_watch(interval_secs),
         Command::Analyze { session } => run_analyze(&session),
-        Command::Report { session, open } => run_report(&session, open),
+        Command::Report {
+            session,
+            open,
+            format,
+        } => run_report(&session, open, format),
         Command::Pull {
             session,
             device,
@@ -617,24 +621,44 @@ fn run_analyze(session: &str) {
     }
 }
 
-fn run_report(session: &str, open: bool) {
+fn run_report(session: &str, open: bool, format: ReportFormat) {
     let session = resolve_session_path(session);
     let chunk = load_chunk(&session);
     let mut summary = SessionSummary::from_events(&chunk.events);
     summary.loss_count = chunk.manifest.loss_count;
     let findings = collect_findings(&chunk);
     let bookmarks = load_mapped_bookmarks(&session, &chunk);
+    let clock_uncertainty_ms =
+        ClockMap::from_samples(&clock_sync_samples_from_events(&chunk.events))
+            .map(|clock_map| clock_map.uncertainty_ms);
 
-    match summary.to_json() {
-        Ok(json) => println!("{json}"),
-        Err(err) => {
-            eprintln!("could not generate report: {err}");
-            exit(1);
+    let report = Report::new(
+        &summary,
+        &findings,
+        &chunk.events,
+        &bookmarks,
+        clock_uncertainty_ms,
+    );
+
+    if format == ReportFormat::Json {
+        match report.to_json() {
+            Ok(json) => {
+                let json_path = format!("{session}.json");
+                if let Err(err) = std::fs::write(&json_path, json) {
+                    eprintln!("could not write JSON report to {json_path}: {err}");
+                    exit(1);
+                }
+                println!("JSON report written to {json_path}");
+            }
+            Err(err) => {
+                eprintln!("could not generate report: {err}");
+                exit(1);
+            }
         }
     }
 
     let html_path = format!("{session}.html");
-    let html = render_html(&summary, &findings, &chunk.events, &bookmarks);
+    let html = render_html(&report);
     if let Err(err) = std::fs::write(&html_path, html) {
         eprintln!("could not write HTML report to {html_path}: {err}");
         exit(1);

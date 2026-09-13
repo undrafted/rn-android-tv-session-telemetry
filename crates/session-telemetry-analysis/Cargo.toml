@@ -6,3 +6,4 @@ publish.workspace = true
 
 [dependencies]
 session-telemetry-protocol.workspace = true
+serde.workspace = true

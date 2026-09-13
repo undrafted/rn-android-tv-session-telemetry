@@ -296,6 +296,7 @@ dependencies = [
 name = "session-telemetry-analysis"
 version = "0.0.0"
 dependencies = [
+ "serde",
  "session-telemetry-protocol",
 ]
 
