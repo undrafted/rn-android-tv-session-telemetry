@@ -3,6 +3,7 @@
 //! against.
 
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
 use session_telemetry_adb::{DeviceInfo, DeviceState};
 use session_telemetry_analysis::{Finding, Severity};
 
@@ -63,10 +64,88 @@ pub enum Command {
     },
 }
 
-#[derive(ValueEnum, Clone, Debug, PartialEq)]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RecordMode {
     Targeted,
     Qa,
+}
+
+impl RecordMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            RecordMode::Targeted => "targeted",
+            RecordMode::Qa => "qa",
+        }
+    }
+}
+
+/// The CLI's own record of "a recording is active" — no live ADB route to the device exists
+/// yet (see architecture.mmd's still-planned `LivePull`), so this doesn't control anything on
+/// the device directly. The app itself starts capturing on its own, via a profiling build's
+/// `SessionTelemetry.install()`; this state file is local bookkeeping so `status`/`stop` can
+/// report on a recording that's presumed to be running, keyed by the name/device the developer
+/// gave `record`. Stored under `~/.session-telemetry/active-session.json` (see main.rs) so it's
+/// consistent regardless of which directory the CLI is invoked from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionState {
+    pub name: String,
+    pub mode: RecordMode,
+    pub device: String,
+    pub started_at_unix_ms: u64,
+}
+
+impl SessionState {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    pub fn from_json(json: &str) -> Result<SessionState, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+}
+
+fn format_duration_ms(duration_ms: u64) -> String {
+    let total_seconds = duration_ms / 1000;
+    format!("{}m {}s", total_seconds / 60, total_seconds % 60)
+}
+
+/// Confirmation printed by `session-telemetry record` once the device is validated and the
+/// state file is written.
+pub fn format_record_started(state: &SessionState) -> String {
+    format!(
+        "Recording \"{}\" ({} mode) on {}. Launch a profiling build on the device now — run \
+         `session-telemetry stop` when done.",
+        state.name,
+        state.mode.label(),
+        state.device
+    )
+}
+
+/// Printed by `session-telemetry status`. `now_unix_ms` is a parameter (not read internally via
+/// `SystemTime::now()`) so this stays pure and testable with a fixed clock reading.
+pub fn format_status(state: Option<&SessionState>, now_unix_ms: u64) -> String {
+    match state {
+        None => "No active recording.".to_string(),
+        Some(state) => format!(
+            "Recording \"{}\" ({} mode) on {} — {} elapsed",
+            state.name,
+            state.mode.label(),
+            state.device,
+            format_duration_ms(now_unix_ms.saturating_sub(state.started_at_unix_ms))
+        ),
+    }
+}
+
+/// Printed by `session-telemetry stop`.
+pub fn format_stop_summary(state: &SessionState, stopped_at_unix_ms: u64) -> String {
+    format!(
+        "Stopped \"{}\" on {} after {}. The captured .rnst chunks remain on the device until \
+         pulled.",
+        state.name,
+        state.device,
+        format_duration_ms(stopped_at_unix_ms.saturating_sub(state.started_at_unix_ms))
+    )
 }
 
 fn device_state_label(state: &DeviceState) -> String {
@@ -179,6 +258,52 @@ mod tests {
     #[test]
     fn rejects_an_unknown_subcommand() {
         assert!(Cli::try_parse_from(["session-telemetry", "not-a-real-command"]).is_err());
+    }
+
+    fn sample_state() -> SessionState {
+        SessionState {
+            name: "catalog-navigation".to_string(),
+            mode: RecordMode::Qa,
+            device: "192.168.1.40:5555".to_string(),
+            started_at_unix_ms: 1_000,
+        }
+    }
+
+    #[test]
+    fn session_state_round_trips_through_json() {
+        let state = sample_state();
+        let json = state.to_json().unwrap();
+        assert_eq!(SessionState::from_json(&json).unwrap(), state);
+    }
+
+    #[test]
+    fn format_status_reports_no_active_recording() {
+        assert_eq!(format_status(None, 5_000), "No active recording.");
+    }
+
+    #[test]
+    fn format_status_reports_elapsed_time() {
+        let state = sample_state();
+        assert_eq!(
+            format_status(Some(&state), state.started_at_unix_ms + 125_000),
+            "Recording \"catalog-navigation\" (qa mode) on 192.168.1.40:5555 — 2m 5s elapsed"
+        );
+    }
+
+    #[test]
+    fn format_record_started_names_the_session_and_device() {
+        let message = format_record_started(&sample_state());
+        assert!(message.contains("catalog-navigation"));
+        assert!(message.contains("qa mode"));
+        assert!(message.contains("192.168.1.40:5555"));
+    }
+
+    #[test]
+    fn format_stop_summary_reports_elapsed_time() {
+        let state = sample_state();
+        let summary = format_stop_summary(&state, state.started_at_unix_ms + 65_000);
+        assert!(summary.contains("1m 5s"));
+        assert!(summary.contains("catalog-navigation"));
     }
 
     #[test]
