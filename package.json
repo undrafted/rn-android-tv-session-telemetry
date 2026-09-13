@@ -1,7 +1,7 @@
 {
   "name": "rn-session-telemetry",
   "private": true,
-  "description": "Session profiler for React Native applications on Android TV.",
+  "description": "Session-based performance telemetry for React Native — from remote input to rendered frame",
   "engines": {
     "node": ">=24"
   },
