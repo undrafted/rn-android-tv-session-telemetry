@@ -56,11 +56,21 @@ pub enum Command {
     Status,
     /// Add a QA bookmark to the active recording.
     Mark { label: String },
-    /// Pull a sealed session from the device.
+    /// Pull a recorded session's .rnst chunks from the device.
     Pull {
+        /// The on-device session directory name (a millisecond timestamp) under
+        /// `rnst-sessions/`, or "latest" for the most recently created one.
         session: String,
         #[arg(long)]
         device: String,
+        /// Android application id the session was recorded from — whichever app embeds this
+        /// library and wrote the .rnst chunks (e.g. com.example.app).
+        #[arg(long)]
+        package: String,
+        /// Local directory to write the pulled chunk files into. Defaults to
+        /// ./pulled-sessions/<session>.
+        #[arg(long)]
+        out: Option<String>,
     },
 }
 
@@ -258,6 +268,56 @@ mod tests {
     #[test]
     fn rejects_an_unknown_subcommand() {
         assert!(Cli::try_parse_from(["session-telemetry", "not-a-real-command"]).is_err());
+    }
+
+    #[test]
+    fn parses_pull_with_its_flags() {
+        let cli = Cli::try_parse_from([
+            "session-telemetry",
+            "pull",
+            "latest",
+            "--device",
+            "emulator-5554",
+            "--package",
+            "com.rnsessiontelemetry.tvfixture",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Pull {
+                session: "latest".to_string(),
+                device: "emulator-5554".to_string(),
+                package: "com.rnsessiontelemetry.tvfixture".to_string(),
+                out: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_pull_with_an_explicit_out_directory() {
+        let cli = Cli::try_parse_from([
+            "session-telemetry",
+            "pull",
+            "1789277657612",
+            "--device",
+            "emulator-5554",
+            "--package",
+            "com.rnsessiontelemetry.tvfixture",
+            "--out",
+            "./sessions/first",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Pull {
+                session: "1789277657612".to_string(),
+                device: "emulator-5554".to_string(),
+                package: "com.rnsessiontelemetry.tvfixture".to_string(),
+                out: Some("./sessions/first".to_string()),
+            }
+        );
     }
 
     fn sample_state() -> SessionState {

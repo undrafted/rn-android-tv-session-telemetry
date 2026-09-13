@@ -7,25 +7,27 @@ flowchart LR
         Buffer["Event buffer"]
         FrameTiming["Native frame timing<br/>FrameMetrics"]
         Collector["Android collector<br/>lifecycle · clock sync<br/>(planned)"]
-        Writer["On-device session writer<br/>.rnst chunks<br/>(planned)"]
+        Writer["On-device session writer<br/>.rnst chunks (JNI)"]
         App --> Lib --> Buffer
         FrameTiming --> Buffer
-        Buffer -.->|native bridge, planned| Collector
+        Buffer -->|native bridge| Writer
         Collector -.-> Writer
     end
 
     subgraph Transport["ADB transport"]
         direction TB
         Discover["Device discovery"]
-        LivePull["Live route + pull + verify<br/>(planned)"]
+        LiveRoute["Live route<br/>(planned)"]
+        Pull["Pull + verify<br/>(run-as + checksum)"]
         Retain["Session retention"]
-        Discover -.-> LivePull
-        LivePull -.-> Retain
+        Discover -.-> LiveRoute
+        Discover --> Pull
+        Pull -.-> Retain
     end
 
     subgraph Host["Rust host"]
         direction TB
-        CLI["CLI<br/>doctor · devices · analyze · report<br/>record · stop · status · mark · pull (planned)"]
+        CLI["CLI<br/>doctor · devices · analyze · report<br/>record · stop · status · pull<br/>mark (planned)"]
         Protocol["Protocol<br/>event schema"]
         SessionCrate["Session<br/>chunking · rotation · budget · checksums"]
         Analysis["Analysis<br/>clock mapping · windows · detectors · QA bookmarks"]
@@ -33,7 +35,7 @@ flowchart LR
         CLI --> Protocol --> SessionCrate --> Analysis --> Report
     end
 
-    App -.-> Discover
-    Writer -.-> LivePull
-    LivePull -.-> CLI
+    App --> Discover
+    Writer --> Pull
+    Pull --> CLI
     Buffer -->|fixture| CLI

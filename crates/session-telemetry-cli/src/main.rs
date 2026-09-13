@@ -1,5 +1,7 @@
 use clap::Parser;
-use session_telemetry_adb::{DeviceState, parse_devices_output};
+use session_telemetry_adb::{
+    DeviceState, parse_devices_output, parse_find_output, resolve_session_dir,
+};
 use session_telemetry_analysis::{
     Finding, build_interaction_windows, detect_high_latency_focus_changes,
     detect_repeated_redux_dispatches,
@@ -25,6 +27,12 @@ fn main() {
         Command::Status => run_status(),
         Command::Analyze { session } => run_analyze(&session),
         Command::Report { session, open } => run_report(&session, open),
+        Command::Pull {
+            session,
+            device,
+            package,
+            out,
+        } => run_pull(&session, &device, &package, out),
         other => println!("`{other:?}` is not implemented yet."),
     }
 }
@@ -150,6 +158,102 @@ fn run_status() {
         "{}",
         format_status(load_session_state().as_ref(), now_unix_ms())
     );
+}
+
+/// Runs `find` inside the target app's private storage via `adb shell run-as` — the mechanism
+/// that actually works for a debuggable app's private files, unlike plain `adb pull` (which
+/// runs as the `shell` user and can't read another app's `/data/user/0/<package>/...` without
+/// root). Returns the parsed paths, or an empty list if the device/package/adb itself isn't
+/// reachable — every call site treats "found nothing" and "couldn't ask" the same way.
+fn find_on_device(device: &str, package: &str, find_args: &[&str]) -> Vec<String> {
+    let mut args = vec!["-s", device, "shell", "run-as", package, "find"];
+    args.extend(find_args);
+    let Ok(output) = ProcessCommand::new("adb").args(&args).output() else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_find_output(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Same `run-as` mechanism as `find_on_device`, but `cat`s one file's raw bytes back rather
+/// than listing paths.
+fn cat_on_device(device: &str, package: &str, remote_path: &str) -> Option<Vec<u8>> {
+    let output = ProcessCommand::new("adb")
+        .args(["-s", device, "shell", "run-as", package, "cat", remote_path])
+        .output()
+        .ok()?;
+    output.status.success().then_some(output.stdout)
+}
+
+fn run_pull(session: &str, device: &str, package: &str, out: Option<String>) {
+    let session_dirs = find_on_device(
+        device,
+        package,
+        &[
+            "files/rnst-sessions",
+            "-mindepth",
+            "1",
+            "-maxdepth",
+            "1",
+            "-type",
+            "d",
+        ],
+    );
+    if session_dirs.is_empty() {
+        eprintln!(
+            "No sessions found on {device} for {package}. Is a profiling build installed and recording?"
+        );
+        exit(1);
+    }
+
+    let Some(session_dir) = resolve_session_dir(session, &session_dirs) else {
+        let available: Vec<&str> = session_dirs
+            .iter()
+            .map(|dir| dir.rsplit('/').next().unwrap_or(dir))
+            .collect();
+        eprintln!(
+            "No session \"{session}\" found on {device} for {package}. Available: {}",
+            available.join(", ")
+        );
+        exit(1);
+    };
+    let session_dir = session_dir.to_string();
+    let session_name = session_dir.rsplit('/').next().unwrap_or(&session_dir);
+
+    let remote_files = find_on_device(
+        device,
+        package,
+        &[&session_dir, "-type", "f", "-name", "*.rnst"],
+    );
+    if remote_files.is_empty() {
+        eprintln!("Session {session_name} has no sealed .rnst chunks yet.");
+        exit(1);
+    }
+
+    let out_dir = out.unwrap_or_else(|| format!("pulled-sessions/{session_name}"));
+    if let Err(err) = std::fs::create_dir_all(&out_dir) {
+        eprintln!("could not create {out_dir}: {err}");
+        exit(1);
+    }
+
+    let mut pulled_count = 0;
+    for remote_file in &remote_files {
+        let Some(bytes) = cat_on_device(device, package, remote_file) else {
+            eprintln!("could not pull {remote_file}, skipping");
+            continue;
+        };
+        let file_name = remote_file.rsplit('/').next().unwrap_or(remote_file);
+        let local_path = PathBuf::from(&out_dir).join(file_name);
+        if let Err(err) = std::fs::write(&local_path, bytes) {
+            eprintln!("could not write {}: {err}", local_path.display());
+            continue;
+        }
+        pulled_count += 1;
+    }
+
+    println!("Pulled {pulled_count} chunk(s) from {session_name} into {out_dir}/");
 }
 
 /// `session` is a path to a chunk JSON file for now — see the `Analyze`/`Report` doc comments
