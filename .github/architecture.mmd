@@ -26,7 +26,7 @@ flowchart LR
         CLI["CLI<br/>doctor · devices · analyze · report<br/>record · stop · status · mark · pull (planned)"]
         Protocol["Protocol<br/>event schema"]
         SessionCrate["Session<br/>chunking · rotation · budget · checksums"]
-        Analysis["Analysis<br/>clock mapping · windows · detectors"]
+        Analysis["Analysis<br/>clock mapping · windows · detectors · QA bookmarks"]
         Report["Report<br/>JSON + HTML"]
         CLI --> Protocol --> SessionCrate --> Analysis --> Report
     end
