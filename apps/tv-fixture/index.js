@@ -4,6 +4,7 @@
 
 import { AppRegistry } from 'react-native';
 import { SessionTelemetry, startFrameTimingMonitor } from '@rn-session-telemetry/react-native';
+import { runOverheadBenchmark } from './benchmark';
 import App from './App';
 import { name as appName } from './app.json';
 
@@ -15,8 +16,19 @@ if (typeof global.window === 'undefined') {
 }
 
 if (__RN_SESSION_TELEMETRY_ENABLED__) {
-  SessionTelemetry.install();
-  startFrameTimingMonitor();
+  if (__RN_SESSION_TELEMETRY_BENCHMARK__) {
+    // A dedicated one-off run (RNST_BENCHMARK=1, see the "benchmark" npm script), not something
+    // that happens on an ordinary profiling launch - runOverheadBenchmark() drives its own
+    // install()/stop() cycle internally, which would otherwise collide with (and pollute) the
+    // real session this branch's `else` starts. Logged, not written to a file: this is a
+    // one-off measurement read off logcat, not part of the recorded session's own data.
+    const result = runOverheadBenchmark();
+    // eslint-disable-next-line no-console
+    console.log('RNST_OVERHEAD_BENCHMARK', JSON.stringify(result));
+  } else {
+    SessionTelemetry.install();
+    startFrameTimingMonitor();
+  }
 }
 
 AppRegistry.registerComponent(appName, () => App);

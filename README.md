@@ -4,3 +4,5 @@ Session-based performance telemetry for React Native — from remote input to re
 
 - [Architecture](docs/architecture.md)
 - [Telemetry signals](docs/signals.md)
+- [Measurement semantics](docs/measurement-semantics.md)
+- [Overhead benchmark](apps/tv-fixture/README.md#overhead-benchmark)

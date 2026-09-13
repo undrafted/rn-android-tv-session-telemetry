@@ -29,6 +29,7 @@ module.exports = [
     languageOptions: {
       globals: {
         __RN_SESSION_TELEMETRY_ENABLED__: 'readonly',
+        __RN_SESSION_TELEMETRY_BENCHMARK__: 'readonly',
       },
     },
   },
