@@ -5,8 +5,8 @@
 | Clocks | Monotonic-source only (`performance.now()`); wall-clock never drives duration math |
 | Units | Every `durationMs`/`timestamp` field is milliseconds; `sequence` is a per-session monotonic counter, not a wall-clock-derived id |
 | Overhead benchmark | See [apps/tv-fixture/README.md](../apps/tv-fixture/README.md#overhead-benchmark) |
-| Event loss | `Chunk.manifest.lossCount` — always `0`, not wired up yet |
-| Clock uncertainty | `ClockMap.uncertainty_ms` — largest residual across fitted clock-sync samples, a bound on how far a mapped bookmark timestamp could be off; computed but not yet surfaced in the CLI or HTML report |
+| Event loss | `Chunk.manifest.lossCount` — always `0` today (no gap/loss detection wired up yet); disclosed in `analyze`'s output and the HTML report's summary regardless |
+| Clock uncertainty | `ClockMap.uncertainty_ms` — largest residual across fitted clock-sync samples, a bound on how far a mapped bookmark timestamp could be off; shown per bookmark in `analyze` and the HTML report |
 | Storage budget | `SessionWriterModule.DEFAULT_BUDGET_BYTES` — 200 MB, unvalidated placeholder |
 
 Detector thresholds (`session-telemetry-analysis::detector`) — all placeholders pending real

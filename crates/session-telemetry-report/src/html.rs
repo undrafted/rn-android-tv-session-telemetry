@@ -59,6 +59,7 @@ fn render_summary(summary: &SessionSummary) -> String {
          <dt>React commits</dt><dd>{}</dd>\n\
          <dt>Delayed frames</dt><dd>{}</dd>\n\
          <dt>Duration</dt><dd>{duration}</dd>\n\
+         <dt>Lost events</dt><dd>{}</dd>\n\
          </dl>",
         summary.event_count,
         summary.remote_input_count,
@@ -69,6 +70,7 @@ fn render_summary(summary: &SessionSummary) -> String {
         summary.js_stall_count,
         summary.react_commit_count,
         summary.frame_timing_count,
+        summary.loss_count,
     )
 }
 
@@ -171,8 +173,10 @@ fn render_bookmarks(bookmarks: &[QaBookmark]) -> String {
         .iter()
         .map(|bookmark| {
             format!(
-                "<li><span class=\"elapsed\">{:.0} ms</span> {}</li>",
+                "<li><span class=\"elapsed\">{:.0} ms</span> \
+                 <span class=\"uncertainty\">±{:.0} ms</span> {}</li>",
                 bookmark.session_timestamp,
+                bookmark.uncertainty_ms,
                 escape_html(&bookmark.label)
             )
         })
@@ -369,6 +373,7 @@ const CSS: &str = "
   tr.evidence-row td { padding: 0 0.6rem 0.75rem 0.6rem; border-bottom: 1px solid #ddd; }
   ol.evidence { margin: 0; padding-left: 1.25rem; color: #444; font-size: 0.9em; }
   ol.evidence .elapsed { display: inline-block; min-width: 4.5em; color: #777; font-variant-numeric: tabular-nums; }
+  ol.evidence .uncertainty { display: inline-block; min-width: 4em; color: #999; font-size: 0.85em; font-variant-numeric: tabular-nums; }
   details.timeline { margin-top: 1.5rem; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1rem; }
   details.timeline summary { cursor: pointer; font-weight: 600; font-size: 1.3em; }
   details.timeline[open] summary { margin-bottom: 0.75rem; }
@@ -424,6 +429,16 @@ mod tests {
         assert!(html.contains("<dt>Network requests</dt><dd>0</dd>"));
         assert!(html.contains("<dt>JS stalls</dt><dd>0</dd>"));
         assert!(html.contains("<dt>React commits</dt><dd>0</dd>"));
+    }
+
+    #[test]
+    fn renders_the_lost_event_count() {
+        let mut summary = SessionSummary::from_events(&[]);
+        summary.loss_count = 4;
+
+        let html = render_html(&summary, &[], &[], &[]);
+
+        assert!(html.contains("<dt>Lost events</dt><dd>4</dd>"));
     }
 
     #[test]
@@ -564,17 +579,19 @@ mod tests {
     }
 
     #[test]
-    fn renders_mapped_bookmarks_with_their_session_timestamp_and_label() {
+    fn renders_mapped_bookmarks_with_their_session_timestamp_uncertainty_and_label() {
         let bookmarks = vec![QaBookmark {
             workstation_timestamp: 1_700_000_000_500.0,
             session_timestamp: 4_200.0,
+            uncertainty_ms: 3.0,
             label: "carousel stopped responding".to_string(),
         }];
 
         let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &bookmarks);
 
         assert!(html.contains("QA bookmarks"));
-        assert!(html.contains("4200 ms</span> carousel stopped responding"));
+        assert!(html.contains("4200 ms</span>"));
+        assert!(html.contains("±3 ms</span> carousel stopped responding"));
     }
 
     #[test]
@@ -655,6 +672,7 @@ mod tests {
         let bookmarks = vec![QaBookmark {
             workstation_timestamp: 0.0,
             session_timestamp: 0.0,
+            uncertainty_ms: 0.0,
             label: "<script>alert(1)</script>".to_string(),
         }];
 

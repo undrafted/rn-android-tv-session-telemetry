@@ -315,6 +315,18 @@ pub fn format_findings(findings: &[Finding]) -> String {
         .join("\n")
 }
 
+/// Printed by `session-telemetry analyze` — plan.md success criterion #9 ("event loss ... is
+/// visible in the report"), the plain-text side of the same disclosure `render_summary` (HTML)
+/// gives. Always printed, not just when non-zero: this is a disclosure of what's known, and
+/// silence would read as "not tracked" rather than "tracked, and zero."
+pub fn format_event_loss(loss_count: u32) -> String {
+    match loss_count {
+        0 => "No events lost.".to_string(),
+        1 => "1 event lost.".to_string(),
+        n => format!("{n} events lost."),
+    }
+}
+
 /// Human-readable bookmark listing for `session-telemetry analyze`, mirroring `format_findings`.
 /// `bookmarks` are already mapped onto the session timeline (see `create_bookmark`) by the
 /// caller — this only renders them.
@@ -327,8 +339,8 @@ pub fn format_bookmarks(bookmarks: &[QaBookmark]) -> String {
         .iter()
         .map(|bookmark| {
             format!(
-                "[bookmark] {:.0} ms: {}",
-                bookmark.session_timestamp, bookmark.label
+                "[bookmark] {:.0} ms (±{:.0} ms): {}",
+                bookmark.session_timestamp, bookmark.uncertainty_ms, bookmark.label
             )
         })
         .collect::<Vec<_>>()
@@ -638,21 +650,37 @@ mod tests {
     }
 
     #[test]
+    fn format_event_loss_discloses_zero_rather_than_staying_silent() {
+        assert_eq!(format_event_loss(0), "No events lost.");
+    }
+
+    #[test]
+    fn format_event_loss_uses_singular_for_one() {
+        assert_eq!(format_event_loss(1), "1 event lost.");
+    }
+
+    #[test]
+    fn format_event_loss_uses_plural_above_one() {
+        assert_eq!(format_event_loss(5), "5 events lost.");
+    }
+
+    #[test]
     fn format_bookmarks_is_empty_when_there_are_none() {
         assert_eq!(format_bookmarks(&[]), "");
     }
 
     #[test]
-    fn format_bookmarks_includes_the_mapped_timestamp_and_label() {
+    fn format_bookmarks_includes_the_mapped_timestamp_uncertainty_and_label() {
         let bookmarks = vec![QaBookmark {
             workstation_timestamp: 1_700_000_000_500.0,
             session_timestamp: 4_200.0,
+            uncertainty_ms: 3.0,
             label: "carousel stopped responding".to_string(),
         }];
 
         assert_eq!(
             format_bookmarks(&bookmarks),
-            "[bookmark] 4200 ms: carousel stopped responding"
+            "[bookmark] 4200 ms (±3 ms): carousel stopped responding"
         );
     }
 

@@ -13,8 +13,8 @@ use session_telemetry_analysis::{
 };
 use session_telemetry_cli::{
     Bookmark, BookmarkFile, Cli, Command, RecordMode, SessionState, format_bookmarks,
-    format_devices, format_findings, format_mark_confirmation, format_record_started,
-    format_status, format_stop_summary, format_watch_line, opener_command,
+    format_devices, format_event_loss, format_findings, format_mark_confirmation,
+    format_record_started, format_status, format_stop_summary, format_watch_line, opener_command,
     resolve_latest_session_file,
 };
 use session_telemetry_report::{SessionSummary, render_html};
@@ -609,6 +609,7 @@ fn run_analyze(session: &str) {
     let session = resolve_session_path(session);
     let chunk = load_chunk(&session);
     println!("{}", format_findings(&collect_findings(&chunk)));
+    println!("{}", format_event_loss(chunk.manifest.loss_count));
 
     let bookmarks = load_mapped_bookmarks(&session, &chunk);
     if !bookmarks.is_empty() {
@@ -619,7 +620,8 @@ fn run_analyze(session: &str) {
 fn run_report(session: &str, open: bool) {
     let session = resolve_session_path(session);
     let chunk = load_chunk(&session);
-    let summary = SessionSummary::from_events(&chunk.events);
+    let mut summary = SessionSummary::from_events(&chunk.events);
+    summary.loss_count = chunk.manifest.loss_count;
     let findings = collect_findings(&chunk);
     let bookmarks = load_mapped_bookmarks(&session, &chunk);
 

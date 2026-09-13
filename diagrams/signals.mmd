@@ -11,7 +11,8 @@ flowchart TD
     FrameTiming["Android frame timing"] --> Timeline
     ClockSync["Clock-sync samples"] --> Timeline
     Bookmarks["QA bookmarks"] --> Timeline
-    SessionMeta["Session metadata<br/>device · loss counters<br/>(planned)"] -.-> Summary
+    LossCount["Loss counter<br/>(real, always 0 — no detection wired up yet)"] --> Summary
+    SessionMeta["Session metadata<br/>device info<br/>(planned)"] -.-> Summary
 
     Timeline --> Windows["Interaction windows"]
     Timeline --> Summary["Session summary"]

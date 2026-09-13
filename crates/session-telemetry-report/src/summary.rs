@@ -17,6 +17,12 @@ pub struct SessionSummary {
     pub react_commit_count: usize,
     pub frame_timing_count: usize,
     pub clock_sync_count: usize,
+    /// The chunk's own `ChunkManifest::loss_count` — not derivable from `events` alone (a lost
+    /// event is, by definition, not among them), so this defaults to `0` here and the caller
+    /// (`main.rs`, which has the manifest) sets it explicitly after construction. Always `0`
+    /// today regardless: no gap/loss detection is wired up on the writer side yet, but the field
+    /// is real schema, not a placeholder — see docs/measurement-semantics.md.
+    pub loss_count: u32,
     pub sequence_start: Option<u64>,
     pub sequence_end: Option<u64>,
     pub timestamp_start: Option<f64>,
@@ -36,6 +42,7 @@ impl SessionSummary {
             react_commit_count: 0,
             frame_timing_count: 0,
             clock_sync_count: 0,
+            loss_count: 0,
             sequence_start: None,
             sequence_end: None,
             timestamp_start: None,
@@ -180,7 +187,8 @@ mod tests {
 
     #[test]
     fn serializes_to_json() {
-        let summary = SessionSummary::from_events(&sample_events());
+        let mut summary = SessionSummary::from_events(&sample_events());
+        summary.loss_count = 3;
 
         let json = summary.to_json().unwrap();
         let decoded: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -188,5 +196,13 @@ mod tests {
         assert_eq!(decoded["eventCount"], 8);
         assert_eq!(decoded["reduxDispatchCount"], 1);
         assert_eq!(decoded["frameTimingCount"], 1);
+        assert_eq!(decoded["lossCount"], 3);
+    }
+
+    #[test]
+    fn loss_count_defaults_to_zero_since_it_cant_be_derived_from_events_alone() {
+        let summary = SessionSummary::from_events(&sample_events());
+
+        assert_eq!(summary.loss_count, 0);
     }
 }
