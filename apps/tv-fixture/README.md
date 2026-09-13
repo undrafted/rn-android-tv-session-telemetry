@@ -4,6 +4,18 @@ The demonstration Android TV app used to build and verify RN Session Telemetry a
 device — a focusable card that records remote input, focus, and interaction-marker events
 through the library.
 
+## Setup
+
+```sh
+npm install                                  # from the repo root — npm workspaces
+rustup target add aarch64-linux-android      # session-telemetry-android's compile target
+cargo install cargo-ndk                      # cross-compiles it into this app's jniLibs
+```
+
+Also needs an Android SDK + NDK (`ANDROID_NDK_HOME` or the SDK's bundled `ndk/`) and a connected
+device or running emulator — the Gradle build shells out to `cargo ndk` on every build
+(`packages/react-native/android/build.gradle`'s `cargoNdkBuildSessionWriter` task).
+
 ## Development
 
 ```sh

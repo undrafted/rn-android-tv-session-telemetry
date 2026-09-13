@@ -6,7 +6,7 @@ flowchart LR
         Lib["Telemetry library<br/>+ Redux middleware"]
         Buffer["Event buffer"]
         FrameTiming["Native frame timing<br/>FrameMetrics"]
-        Collector["Android collector<br/>lifecycle · clock sync<br/>(planned)"]
+        Collector["Android collector<br/>lifecycle<br/>(planned)"]
         Writer["On-device session writer<br/>.rnst chunks (JNI)"]
         App --> Lib
         FrameTiming --> Lib
@@ -18,17 +18,17 @@ flowchart LR
     subgraph Transport["ADB transport"]
         direction TB
         Discover["Device discovery"]
-        LiveRoute["Live route<br/>(planned)"]
+        LiveRoute["Live route<br/>(watch — read-only poll)"]
         Pull["Pull + verify<br/>(run-as + checksum)"]
         Retain["Session retention<br/>(wired into pull)"]
-        Discover -.-> LiveRoute
+        Discover --> LiveRoute
         Discover --> Pull
         Pull --> Retain
     end
 
     subgraph Host["Rust host"]
         direction TB
-        CLI["CLI<br/>doctor · devices · analyze · report<br/>record --package · stop · mark · status · pull"]
+        CLI["CLI<br/>doctor · devices · analyze · report<br/>record --package · stop · mark · status · watch · pull"]
         Protocol["Protocol<br/>event schema"]
         SessionCrate["Session<br/>chunking · rotation · budget · checksums"]
         Analysis["Analysis<br/>clock mapping · windows · detectors · QA bookmarks"]
@@ -38,6 +38,8 @@ flowchart LR
 
     App --> Discover
     Writer --> Pull
+    Writer --> LiveRoute
     Pull --> CLI
+    LiveRoute --> CLI
     Buffer -->|fixture| CLI
     CLI -->|adb broadcast: start/stop session| Writer

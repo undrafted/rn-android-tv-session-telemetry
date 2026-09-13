@@ -9,8 +9,9 @@ flowchart TD
     ReactCommit["React commits"] --> Timeline
     JSStall["JS stalls"] --> Timeline
     FrameTiming["Android frame timing"] --> Timeline
-    Bookmarks["QA bookmarks<br/>(planned)"] -.-> Timeline
-    SessionMeta["Session metadata<br/>device · clock mapping · loss counters<br/>(planned)"] -.-> Summary
+    ClockSync["Clock-sync samples"] --> Timeline
+    Bookmarks["QA bookmarks"] --> Timeline
+    SessionMeta["Session metadata<br/>device · loss counters<br/>(planned)"] -.-> Summary
 
     Timeline --> Windows["Interaction windows"]
     Timeline --> Summary["Session summary"]
