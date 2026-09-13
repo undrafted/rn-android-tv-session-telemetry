@@ -32,10 +32,9 @@ impl DeviceState {
     }
 }
 
-/// Parses the text `adb devices -l` prints to stdout. Not exercised against a real `adb`
-/// binary yet — this machine doesn't have the Android toolchain (plan.md's Week 1 gate) — but
-/// the format itself is stable ADB CLI output, so the parsing logic is real and testable
-/// independent of that.
+/// Parses the text `adb devices -l` prints to stdout. Not exercised against this crate's own
+/// `adb` invocation yet, but the format itself is stable ADB CLI output, so the parsing logic
+/// is real and testable independent of that.
 pub fn parse_devices_output(output: &str) -> Vec<DeviceInfo> {
     output
         .lines()
@@ -87,8 +86,7 @@ fn parse_device_line(line: &str) -> DeviceInfo {
 }
 
 /// True for a `host:port` serial — a network-connected Android TV, the form the CLI's
-/// `--device 192.168.1.40:5555` expects (plan.md section 5) — false for a USB serial or
-/// emulator id.
+/// `--device 192.168.1.40:5555` expects — false for a USB serial or emulator id.
 pub fn is_network_serial(serial: &str) -> bool {
     match serial.rsplit_once(':') {
         Some((host, port)) => {

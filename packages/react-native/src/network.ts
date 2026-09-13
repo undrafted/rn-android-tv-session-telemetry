@@ -2,8 +2,8 @@ import { monotonicNowMs } from './clock.js';
 import { SessionTelemetry } from './index.js';
 
 export interface NormalizeUrlOptions {
-  // Query parameter names to keep verbatim. Everything else is stripped — plan.md section 6's
-  // privacy defaults: "Query-string values unless explicitly allowlisted" are not captured.
+  // Query parameter names to keep verbatim. Everything else is stripped by default, since
+  // query-string values often carry auth tokens, session ids, or other secrets.
   allowlistedQueryParams?: readonly string[];
 }
 
@@ -70,12 +70,11 @@ function parseContentLength(headers: Headers): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-// Wraps fetch to record method/normalized-URL/status/duration/byte-counts per plan.md
-// section 6's Network row. Explicit opt-in (the app passes its own fetch and uses the
-// returned wrapped version) rather than monkey-patching the global — matches this library's
-// existing preference for explicit markers over patching internals (plan.md section 8.1).
-// Only covers fetch: plan.md's own risk list already documents that "network wrapping misses
-// native clients" as a known V1 limitation, not something this closes.
+// Wraps fetch to record method/normalized-URL/status/duration/byte-counts. Explicit opt-in
+// (the app passes its own fetch and uses the returned wrapped version) rather than
+// monkey-patching the global — matches this library's existing preference for explicit markers
+// over patching internals. Only covers fetch: a native network client wouldn't be touched by
+// this wrapper, and is a known limitation, not something this closes.
 export function createInstrumentedFetch(
   baseFetch: typeof fetch = fetch,
   options: NormalizeUrlOptions = {},

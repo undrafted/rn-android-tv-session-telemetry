@@ -1,10 +1,10 @@
 //! Generates the deterministic fixture session at fixtures/sessions/catalog-navigation.json.
 //! Run with: cargo run -p session-telemetry-session --example generate_fixture
 //!
-//! Three interactions: a quick, unremarkable focus move; a slow one matching the 214ms example
-//! trace in plan.md section 1 exactly; and a rapid-fire burst that redundantly dispatches the
-//! same Redux action three times. `session-telemetry analyze` on this fixture should produce
-//! exactly two findings, one from each of the two detectors.
+//! Three interactions: a quick, unremarkable focus move; a slow one taking 214ms to reach focus
+//! change; and a rapid-fire burst that redundantly dispatches the same Redux action three
+//! times. `session-telemetry analyze` on this fixture should produce exactly two findings, one
+//! from each of the two detectors.
 
 use session_telemetry_protocol::{
     Event, FocusEvent, InteractionMarkerEvent, ReduxDispatchEvent, RemoteInputEvent,
@@ -33,7 +33,7 @@ fn main() {
         previous_target_id: Some("card-1".to_string()),
     }));
 
-    // Interaction B: matches plan.md section 1's example trace, 214ms to focus change.
+    // Interaction B: slow, 214ms to focus change.
     writer.push(Event::RemoteInput(RemoteInputEvent {
         sequence: 3,
         timestamp: 500.0,

@@ -139,6 +139,17 @@ describe('recordReactCommit', () => {
   });
 });
 
+describe('recordFrameTiming', () => {
+  it('records the frame duration', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.recordFrameTiming(48.2);
+
+    expect(SessionTelemetry.getBufferedEvents()).toEqual([
+      expect.objectContaining({ type: 'frame-timing', durationMs: 48.2 }),
+    ]);
+  });
+});
+
 describe('bounded buffer', () => {
   it('evicts the oldest event once maxBufferedEvents is reached', () => {
     SessionTelemetry.install({ maxBufferedEvents: 2 });

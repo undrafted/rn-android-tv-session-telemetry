@@ -3,7 +3,7 @@ use session_telemetry_protocol::Event;
 use std::fmt;
 
 /// Bumped when the on-disk chunk shape changes; lets the host decide whether it can decode an
-/// older chunk directly or needs a schema-upgrade path (plan.md section 8.4).
+/// older chunk directly or needs a schema-upgrade path.
 pub const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -15,8 +15,8 @@ pub struct ChunkManifest {
     pub timestamp_start: f64,
     pub timestamp_end: f64,
     pub event_count: usize,
-    /// Always 0 for now — no gap/loss detection is wired up yet. The field is real schema
-    /// (plan.md section 8.5 requires it per chunk), just not populated with real data yet.
+    /// Always 0 for now — no gap/loss detection is wired up yet. The field is real schema,
+    /// just not populated with real data yet.
     pub loss_count: u32,
     /// CRC32 over the JSON encoding of `events`, computed independently of this manifest so
     /// there's no circular dependency between the checksum and the struct that stores it.
@@ -54,9 +54,9 @@ fn checksum_of(events: &[Event]) -> Result<u32, serde_json::Error> {
     Ok(crc32fast::hash(&bytes))
 }
 
-/// Accumulates events for one chunk. The writer rotates to a new chunk after a configured
-/// duration or size (plan.md section 8.5); that rotation policy isn't implemented yet — this
-/// is just the accumulate-then-seal primitive it would rotate on top of.
+/// Accumulates events for one chunk. `RotatingChunkWriter` (rotation.rs) decides when to seal
+/// this and start a new one — this is just the accumulate-then-seal primitive it rotates on
+/// top of.
 #[derive(Debug, Default)]
 pub struct ChunkWriter {
     events: Vec<Event>,
@@ -122,8 +122,7 @@ impl Chunk {
     }
 
     /// Decodes a chunk and verifies its checksum, so a truncated/corrupted chunk from an
-    /// interrupted capture (plan.md section 8.3: "the current open chunk may be repaired or
-    /// discarded after a crash") is rejected rather than silently trusted.
+    /// interrupted capture is rejected rather than silently trusted.
     pub fn decode(bytes: &[u8]) -> Result<Chunk, ChunkError> {
         let chunk: Chunk = serde_json::from_slice(bytes).map_err(ChunkError::Deserialize)?;
         let actual = checksum_of(&chunk.events).map_err(ChunkError::Deserialize)?;

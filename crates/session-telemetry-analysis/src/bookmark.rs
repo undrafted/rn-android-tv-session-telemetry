@@ -1,7 +1,7 @@
 use crate::clock::ClockMap;
 
-/// plan.md section 6's QA annotation row: "workstation timestamp, mapped session timestamp,
-/// bookmark label." `workstation_timestamp` is whatever the workstation's own clock read when
+/// A QA annotation: workstation timestamp, mapped session timestamp, and a label.
+/// `workstation_timestamp` is whatever the workstation's own clock read when
 /// `session-telemetry mark` ran (effectively wall-clock, not the session's monotonic source) —
 /// `session_timestamp` is that same moment mapped onto the session's monotonic timeline via
 /// `ClockMap`, which is what makes it safe to place the bookmark on the actual event timeline

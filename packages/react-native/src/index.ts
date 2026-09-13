@@ -11,16 +11,18 @@ export type {
   NetworkEvent,
   JsStallEvent,
   ReactCommitEvent,
+  FrameTimingEvent,
 } from './events.js';
 export { FocusableView, type FocusableViewProps } from './FocusableView.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
 export { startStallMonitor, type StallMonitorOptions } from './stall.js';
 export { onProfilerRender } from './profiler.js';
+export { startFrameTimingMonitor, type FrameTimingMonitorOptions } from './frameTiming.js';
 
 export interface InstallOptions {
   // Once the buffer reaches this size, the oldest event is dropped for each new one recorded
   // (a sliding window), and droppedEventCount increments — bounded memory over a multi-hour QA
-  // capture (plan.md success criterion #11) instead of an unbounded array. Clamped to >= 1.
+  // capture instead of an unbounded array. Clamped to >= 1.
   maxBufferedEvents?: number;
 }
 
@@ -39,14 +41,15 @@ export interface SessionTelemetryApi {
     responseBytes: number | null,
   ): void;
   recordJsStall(durationMs: number): void;
+  recordFrameTiming(durationMs: number): void;
   recordReactCommit(
     profilerId: string,
     phase: 'mount' | 'update' | 'nested-update',
     actualDurationMs: number,
     baseDurationMs: number,
   ): void;
-  // Temporary: exposes the in-memory buffer until a native chunk writer exists (plan.md
-  // Week 4 gate). Not part of the stable V1 API surface.
+  // Temporary: exposes the in-memory buffer until a native chunk writer exists. Not part of
+  // the stable V1 API surface.
   getBufferedEvents(): readonly SessionTelemetryEvent[];
   // How many events the sliding window has evicted this session — the "event loss ... visible
   // in the report" disclosure success criterion #9 requires, at least on the JS side of it.
@@ -65,7 +68,7 @@ let droppedEventCount = 0;
 // Recording methods (mark/recordFocus/handleHardwareEvent) are real no-ops until install()
 // runs. App code calls mark()/recordFocus() unconditionally from UI handlers rather than
 // re-checking the build flag at every call site, so this is what actually keeps a disabled
-// build from silently growing the buffer forever — see plan.md section 5.
+// build from silently growing the buffer forever.
 let installed = false;
 
 function pushEvent(event: SessionTelemetryEvent): void {
@@ -179,6 +182,18 @@ function recordJsStall(durationMs: number): void {
   });
 }
 
+function recordFrameTiming(durationMs: number): void {
+  if (!installed) {
+    return;
+  }
+  pushEvent({
+    type: 'frame-timing',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    durationMs,
+  });
+}
+
 function recordReactCommit(
   profilerId: string,
   phase: 'mount' | 'update' | 'nested-update',
@@ -215,6 +230,7 @@ export const SessionTelemetry: SessionTelemetryApi = {
   recordDispatch,
   recordNetworkRequest,
   recordJsStall,
+  recordFrameTiming,
   recordReactCommit,
   getBufferedEvents,
   getDroppedEventCount,

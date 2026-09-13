@@ -1,10 +1,9 @@
 use serde::Serialize;
 use session_telemetry_protocol::Event;
 
-/// The report's entry point — success criterion #13 in plan.md section 4 requires the report
-/// to open with a session summary rather than rendering every event of a long session at once.
-/// This is that summary's data, independent of whichever renderer (JSON today, HTML later)
-/// presents it.
+/// The report's entry point — a long session's report must open with a summary rather than
+/// rendering every event at once. This is that summary's data, independent of whichever
+/// renderer (JSON today, HTML later) presents it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSummary {

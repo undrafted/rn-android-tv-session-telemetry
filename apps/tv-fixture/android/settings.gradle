@@ -1,6 +1,9 @@
-pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
+// This is an npm workspace, so @react-native/gradle-plugin gets hoisted to the monorepo root's
+// node_modules rather than living locally under apps/tv-fixture/node_modules like a standalone
+// RN app would have it - the CLI-generated relative path assumed the latter.
+pluginManagement { includeBuild("../../../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
 rootProject.name = 'com.rnsessiontelemetry.tvfixture'
 include ':app'
-includeBuild('../node_modules/@react-native/gradle-plugin')
+includeBuild('../../../node_modules/@react-native/gradle-plugin')

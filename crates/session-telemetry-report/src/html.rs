@@ -1,11 +1,10 @@
 use crate::summary::SessionSummary;
 use session_telemetry_analysis::{Finding, Severity};
 
-/// Renders a static HTML report from a session summary and its findings — plan.md section 4
-/// success criterion #13: the report must open with a summary, not attempt to render every
-/// event of a long session at once. Consistent with that, this takes a `SessionSummary` and
-/// `Finding`s, not a raw event list, so there's no way to accidentally dump a whole session
-/// into the page.
+/// Renders a static HTML report from a session summary and its findings. A long session's
+/// report must open with a summary, not attempt to render every event at once — consistent
+/// with that, this takes a `SessionSummary` and `Finding`s, not a raw event list, so there's no
+/// way to accidentally dump a whole session into the page.
 ///
 /// Every value rendered here is either a number or one of our own `&'static str` constants
 /// (detector names, units) — nothing free-form/user-controlled goes into this HTML yet, so

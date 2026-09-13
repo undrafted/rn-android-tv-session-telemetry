@@ -51,14 +51,19 @@ export interface ReactCommitEvent {
   type: 'react-commit';
   sequence: number;
   timestamp: number;
-  // React's own Profiler onRender identifiers/measurements, passed through unchanged — see
-  // plan.md section 14 #2 ("React commit measurement mechanism"): the public Profiler API is
-  // the documented hook, not an internal one that could change under us (section 13's risk
-  // table: "prefer public profiler hooks and documented markers").
+  // React's own Profiler onRender identifiers/measurements, passed through unchanged: the
+  // public Profiler API is the documented hook, not an internal one that could change under us.
   profilerId: string;
   phase: 'mount' | 'update' | 'nested-update';
   actualDurationMs: number;
   baseDurationMs: number;
+}
+
+export interface FrameTimingEvent {
+  type: 'frame-timing';
+  sequence: number;
+  timestamp: number;
+  durationMs: number;
 }
 
 export type SessionTelemetryEvent =
@@ -68,13 +73,14 @@ export type SessionTelemetryEvent =
   | ReduxDispatchEvent
   | NetworkEvent
   | JsStallEvent
-  | ReactCommitEvent;
+  | ReactCommitEvent
+  | FrameTimingEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,
-// which is a hard V1 requirement — see plan.md section 3). Focus is recorded explicitly via
-// recordFocus() from each component's onFocus prop instead; anything else TVEventHandler
-// reports is treated as remote-control input.
+// which this library targets). Focus is recorded explicitly via recordFocus() from each
+// component's onFocus prop instead; anything else TVEventHandler reports is treated as
+// remote-control input.
 const NON_REMOTE_INPUT_EVENT_TYPES: ReadonlySet<string> = new Set(['focus', 'blur']);
 
 export function isRemoteInputEventType(eventType: string): boolean {

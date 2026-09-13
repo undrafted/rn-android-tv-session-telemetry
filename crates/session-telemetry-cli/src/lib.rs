@@ -1,13 +1,13 @@
 //! CLI argument parsing and pure formatting logic. Kept separate from `main.rs` so it's unit
 //! testable without spawning a real `adb` process — this machine doesn't have one to test
-//! against (plan.md's Week 1 gate).
+//! against.
 
 use clap::{Parser, Subcommand, ValueEnum};
 use session_telemetry_adb::{DeviceInfo, DeviceState};
 use session_telemetry_analysis::{Finding, Severity};
 
-/// Mirrors the CLI usage shown in plan.md section 5. Most subcommands are parsed but not yet
-/// implemented — see `main.rs` for which ones actually do something today.
+/// Most subcommands are parsed but not yet implemented — see `main.rs` for which ones actually
+/// do something today.
 #[derive(Parser, Debug, PartialEq)]
 #[command(
     name = "session-telemetry",
@@ -100,8 +100,8 @@ pub fn format_devices(devices: &[DeviceInfo]) -> String {
 }
 
 /// Human-readable findings listing for `session-telemetry analyze`. Deliberately plain-text,
-/// not JSON — this is a terminal summary (plan.md section 5's "Terminal summary" deliverable),
-/// distinct from the JSON `session-telemetry-report` output.
+/// not JSON — this is a terminal summary, distinct from the JSON `session-telemetry-report`
+/// output.
 pub fn format_findings(findings: &[Finding]) -> String {
     if findings.is_empty() {
         return "No findings.".to_string();

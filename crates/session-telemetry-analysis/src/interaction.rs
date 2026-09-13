@@ -5,17 +5,16 @@ use session_telemetry_protocol::{Event, FocusEvent, RemoteInputEvent};
 /// change was observed for this specific input before either another input arrived or the
 /// session ended.
 ///
-/// This measures input-to-*focus-change* latency, one of the "Core metrics" in plan.md section
-/// 7. It is not yet input-to-*visible-update* latency (the plan's headline metric) — that needs
-/// an explicit visible-update marker, which is architecture decision #8 in section 14 and isn't
-/// decided yet. Don't conflate the two when reading results from this module.
+/// This measures input-to-*focus-change* latency. It is not yet input-to-*visible-update*
+/// latency (the more meaningful metric) — that needs an explicit visible-update marker, which
+/// isn't decided yet. Don't conflate the two when reading results from this module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InteractionWindow {
     pub input: RemoteInputEvent,
     pub focus: Option<FocusEvent>,
     /// Everything else (Redux dispatches, interaction markers) that fell between the input and
     /// the resulting focus change (or the window's end) — evidence for detectors like "repeated
-    /// Redux actions during one remote-input burst" (plan.md section 7, detector #4).
+    /// Redux actions during one remote-input burst".
     pub other_events: Vec<Event>,
 }
 

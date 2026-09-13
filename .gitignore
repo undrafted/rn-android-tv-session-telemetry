@@ -8,7 +8,10 @@ npm-debug.log*
 target/
 
 # Android/React Native: each app under apps/*/ ships its own .gitignore (from the RN CLI
-# template) scoped to that app's own android/, node_modules/, build artifacts, etc.
+# template) scoped to that app's own android/, node_modules/, build artifacts, etc. Native
+# library modules (e.g. packages/*/android/) have no such template, so their Gradle build
+# output is ignored here instead.
+**/android/build/
 
 # Recorded sessions (large, machine-specific — keep fixtures/sessions curated instead)
 *.rnst

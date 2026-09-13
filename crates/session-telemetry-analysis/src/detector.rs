@@ -14,11 +14,10 @@ pub enum Severity {
     Critical,
 }
 
-/// A subset of the finding shape plan.md section 7 describes ("Every finding contains: a
-/// stable finding ID, detector and version, severity, capability requirements, exact time
-/// range, referenced event IDs, recorded values with units, uncertainty and event-loss
-/// disclosure, neutral wording"). Capability requirements and loss/uncertainty disclosure
-/// aren't included yet — nothing populates that data anywhere in the workspace yet either.
+/// A finding: which detector produced it, at what version, how severe, the exact sequence
+/// range it covers, and the measured value. Capability requirements and loss/uncertainty
+/// disclosure aren't included yet — nothing populates that data anywhere in the workspace yet
+/// either.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Finding {
     pub detector: &'static str,
@@ -27,18 +26,14 @@ pub struct Finding {
     pub sequence_start: u64,
     pub sequence_end: u64,
     /// The measurement this finding is based on — a latency in ms, a repeat count, etc.
-    /// Generic rather than e.g. `latency_ms` because not every detector measures a duration
-    /// (plan.md section 7: findings carry "recorded values with units", plural kinds of both).
+    /// Generic rather than e.g. `latency_ms` because not every detector measures a duration.
     pub value: f64,
     pub unit: &'static str,
 }
 
-/// Flags interactions whose input-to-focus-change latency crosses a threshold — the first of
-/// plan.md section 7's "Initial detectors" ("remote interaction with high visible-response
-/// latency"), scoped to focus-change latency for now (see `interaction.rs` for why). The
-/// 100ms/300ms thresholds are placeholders pending real device measurements, not values anyone
-/// has actually measured — plan.md explicitly calls "documented thresholds" out as something
-/// severity should be based on, and these aren't that yet.
+/// Flags interactions whose input-to-focus-change latency crosses a threshold, scoped to
+/// focus-change latency for now (see `interaction.rs` for why). The 100ms/300ms thresholds are
+/// placeholders pending real device measurements, not values anyone has actually measured.
 pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<Finding> {
     const WARNING_THRESHOLD_MS: f64 = 100.0;
     const CRITICAL_THRESHOLD_MS: f64 = 300.0;
@@ -69,8 +64,7 @@ pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<F
         .collect()
 }
 
-/// Flags interaction windows where the same Redux action type was dispatched more than once —
-/// plan.md section 7 detector #4, "repeated Redux actions during one remote-input burst". A
+/// Flags interaction windows where the same Redux action type was dispatched more than once. A
 /// repeat threshold of 2 (i.e. any duplicate) is a starting guess, not a measured number, same
 /// caveat as the latency thresholds above.
 pub fn detect_repeated_redux_dispatches(windows: &[InteractionWindow]) -> Vec<Finding> {

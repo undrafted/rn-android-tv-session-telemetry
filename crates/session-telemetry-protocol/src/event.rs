@@ -26,7 +26,7 @@ impl Event {
         }
     }
 
-    /// Monotonic source-clock milliseconds. Never wall-clock — see plan.md section 8.5.
+    /// Monotonic source-clock milliseconds. Never wall-clock.
     pub fn timestamp(&self) -> f64 {
         match self {
             Event::RemoteInput(event) => event.timestamp,

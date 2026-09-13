@@ -6,6 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.rnsessiontelemetry.reactnative.FrameTimingPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -14,8 +15,10 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          // Registered manually rather than relying on autolinking discovery, per this file's
+          // own guidance - a legacy (non-Turbo) NativeModule package, kept simple since this is
+          // a first native prototype (public hooks only, no Codegen).
+          add(FrameTimingPackage())
         },
     )
   }

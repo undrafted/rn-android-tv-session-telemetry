@@ -1,7 +1,6 @@
-/// A (source_clock, reference_clock) pair captured near the same real moment — plan.md section
-/// 8.5's "clock-synchronization samples". Both are monotonic milliseconds from their own clock
-/// domain (e.g. the JS engine's `performance.now()` vs. the Android collector's clock); neither
-/// is wall-clock time.
+/// A (source_clock, reference_clock) pair captured near the same real moment. Both are
+/// monotonic milliseconds from their own clock domain (e.g. the JS engine's `performance.now()`
+/// vs. the Android collector's clock); neither is wall-clock time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClockSyncSample {
     pub source: f64,
@@ -9,17 +8,15 @@ pub struct ClockSyncSample {
 }
 
 /// Maps timestamps from one monotonic clock domain onto another, fitted from sync samples.
-/// Architecture decision #5 in plan.md section 14 ("monotonic clock synchronization model")
-/// isn't formally written up yet; this is a first real, linear-fit implementation of it, not a
-/// placeholder — two independent hardware clocks can drift relative to each other over a long
-/// QA session, so this fits both an offset and a rate (`scale`), not just a constant offset.
+/// Two independent hardware clocks can drift relative to each other over a long QA session, so
+/// this fits both an offset and a rate (`scale`), not just a constant offset.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClockMap {
     offset: f64,
     scale: f64,
     /// Largest absolute residual across the fitted samples — a simple bound on how far a
     /// mapped timestamp could be off. Surfaced so findings can disclose clock uncertainty
-    /// rather than presenting a mapped timestamp as exact (plan.md section 7).
+    /// rather than presenting a mapped timestamp as exact.
     pub uncertainty_ms: f64,
 }
 

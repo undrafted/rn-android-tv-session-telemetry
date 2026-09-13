@@ -2,8 +2,8 @@
  * RN Session Telemetry — TV fixture
  *
  * Minimal focusable screen used to validate that a remote-control press and a focus
- * transition both show up as events. See plan.md section 15 for where this grows into the
- * deliberately inefficient demonstration app.
+ * transition both show up as events. Later grows into a deliberately inefficient
+ * demonstration app.
  *
  * @format
  */

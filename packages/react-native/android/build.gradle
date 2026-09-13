@@ -1,0 +1,31 @@
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+def getExtOrDefault(name, defaultValue) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : defaultValue
+}
+
+android {
+  namespace "com.rnsessiontelemetry.reactnative"
+  compileSdk getExtOrDefault("compileSdkVersion", 36)
+
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion", 24)
+    targetSdkVersion getExtOrDefault("targetSdkVersion", 36)
+  }
+
+  kotlinOptions {
+    jvmTarget = "17"
+  }
+}
+
+repositories {
+  google()
+  mavenCentral()
+}
+
+dependencies {
+  // Version is resolved by the React Native Gradle Plugin to match the consuming app's RN
+  // version - see apps/tv-fixture/android/app/build.gradle for the same pattern.
+  implementation("com.facebook.react:react-android")
+}

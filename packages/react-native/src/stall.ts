@@ -14,9 +14,9 @@ const DEFAULT_THRESHOLD_MS = 50;
 
 // Approximates JS event-loop stalls the standard way: schedule a timer for a known interval,
 // and if it fires much later than expected, the gap is time the main thread spent blocked on
-// something else — plan.md section 6's "Event-loop stall start/end and duration". This is an
-// approximation, not real profiling: a timer firing late is a symptom of a stall, not a
-// measurement of what caused it (see plan.md's excluded "CPU sampling").
+// something else. This is an approximation, not real profiling: a timer firing late is a
+// symptom of a stall, not a measurement of what caused it (that would need CPU sampling, which
+// this library deliberately doesn't do).
 export function startStallMonitor(options: StallMonitorOptions = {}): () => void {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const thresholdMs = options.thresholdMs ?? DEFAULT_THRESHOLD_MS;

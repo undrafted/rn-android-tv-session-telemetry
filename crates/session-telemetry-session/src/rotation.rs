@@ -1,8 +1,8 @@
 use crate::chunk::{Chunk, ChunkWriter};
 use session_telemetry_protocol::Event;
 
-/// When to rotate to a new chunk — plan.md section 8.5: "The writer rotates after a configured
-/// duration or encoded size." Either threshold being crossed triggers a rotation.
+/// When to rotate to a new chunk: after a configured duration or encoded size. Either threshold
+/// being crossed triggers a rotation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RotationPolicy {
     pub max_encoded_size_bytes: usize,
@@ -51,8 +51,7 @@ impl RotatingChunkWriter {
     }
 
     /// Caps the total encoded size across every chunk this writer produces (sealed and
-    /// in-progress combined) — plan.md section 8.3: "Enforce configured per-session and
-    /// total-storage budgets."
+    /// in-progress combined).
     pub fn with_budget(mut self, max_total_encoded_size_bytes: usize) -> Self {
         self.budget_bytes = Some(max_total_encoded_size_bytes);
         self
