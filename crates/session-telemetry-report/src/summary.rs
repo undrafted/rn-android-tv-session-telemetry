@@ -12,6 +12,10 @@ pub struct SessionSummary {
     pub focus_count: usize,
     pub interaction_marker_count: usize,
     pub redux_dispatch_count: usize,
+    pub network_count: usize,
+    pub js_stall_count: usize,
+    pub react_commit_count: usize,
+    pub frame_timing_count: usize,
     pub sequence_start: Option<u64>,
     pub sequence_end: Option<u64>,
     pub timestamp_start: Option<f64>,
@@ -26,6 +30,10 @@ impl SessionSummary {
             focus_count: 0,
             interaction_marker_count: 0,
             redux_dispatch_count: 0,
+            network_count: 0,
+            js_stall_count: 0,
+            react_commit_count: 0,
+            frame_timing_count: 0,
             sequence_start: None,
             sequence_end: None,
             timestamp_start: None,
@@ -38,6 +46,10 @@ impl SessionSummary {
                 Event::Focus(_) => summary.focus_count += 1,
                 Event::InteractionMarker(_) => summary.interaction_marker_count += 1,
                 Event::ReduxDispatch(_) => summary.redux_dispatch_count += 1,
+                Event::Network(_) => summary.network_count += 1,
+                Event::JsStall(_) => summary.js_stall_count += 1,
+                Event::ReactCommit(_) => summary.react_commit_count += 1,
+                Event::FrameTiming(_) => summary.frame_timing_count += 1,
             }
 
             let sequence = event.sequence();
@@ -74,7 +86,8 @@ impl SessionSummary {
 mod tests {
     use super::*;
     use session_telemetry_protocol::{
-        FocusEvent, InteractionMarkerEvent, ReduxDispatchEvent, RemoteInputEvent,
+        FocusEvent, FrameTimingEvent, InteractionMarkerEvent, JsStallEvent, NetworkEvent,
+        ReactCommitEvent, ReactCommitPhase, ReduxDispatchEvent, RemoteInputEvent,
     };
 
     fn sample_events() -> Vec<Event> {
@@ -101,6 +114,34 @@ mod tests {
                 action_type: "catalog/itemFocused".to_string(),
                 duration_ms: 4.2,
             }),
+            Event::Network(NetworkEvent {
+                sequence: 4,
+                timestamp: 220.0,
+                method: "GET".to_string(),
+                url: "https://api.example.com/program/482".to_string(),
+                status: 200,
+                duration_ms: 42.0,
+                request_bytes: None,
+                response_bytes: Some(1024),
+            }),
+            Event::JsStall(JsStallEvent {
+                sequence: 5,
+                timestamp: 230.0,
+                duration_ms: 58.0,
+            }),
+            Event::ReactCommit(ReactCommitEvent {
+                sequence: 6,
+                timestamp: 240.0,
+                profiler_id: "CatalogRow".to_string(),
+                phase: ReactCommitPhase::Update,
+                actual_duration_ms: 12.5,
+                base_duration_ms: 8.1,
+            }),
+            Event::FrameTiming(FrameTimingEvent {
+                sequence: 7,
+                timestamp: 250.0,
+                duration_ms: 48.2,
+            }),
         ]
     }
 
@@ -118,16 +159,20 @@ mod tests {
     fn counts_each_event_type_and_computes_the_range() {
         let summary = SessionSummary::from_events(&sample_events());
 
-        assert_eq!(summary.event_count, 4);
+        assert_eq!(summary.event_count, 8);
         assert_eq!(summary.remote_input_count, 1);
         assert_eq!(summary.focus_count, 1);
         assert_eq!(summary.interaction_marker_count, 1);
         assert_eq!(summary.redux_dispatch_count, 1);
+        assert_eq!(summary.network_count, 1);
+        assert_eq!(summary.js_stall_count, 1);
+        assert_eq!(summary.react_commit_count, 1);
+        assert_eq!(summary.frame_timing_count, 1);
         assert_eq!(summary.sequence_start, Some(0));
-        assert_eq!(summary.sequence_end, Some(3));
+        assert_eq!(summary.sequence_end, Some(7));
         assert_eq!(summary.timestamp_start, Some(0.0));
-        assert_eq!(summary.timestamp_end, Some(214.0));
-        assert_eq!(summary.duration_ms(), Some(214.0));
+        assert_eq!(summary.timestamp_end, Some(250.0));
+        assert_eq!(summary.duration_ms(), Some(250.0));
     }
 
     #[test]
@@ -137,7 +182,8 @@ mod tests {
         let json = summary.to_json().unwrap();
         let decoded: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(decoded["eventCount"], 4);
+        assert_eq!(decoded["eventCount"], 8);
         assert_eq!(decoded["reduxDispatchCount"], 1);
+        assert_eq!(decoded["frameTimingCount"], 1);
     }
 }

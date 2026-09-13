@@ -2,4 +2,7 @@
 
 mod event;
 
-pub use event::{Event, FocusEvent, InteractionMarkerEvent, ReduxDispatchEvent, RemoteInputEvent};
+pub use event::{
+    Event, FocusEvent, FrameTimingEvent, InteractionMarkerEvent, JsStallEvent, NetworkEvent,
+    ReactCommitEvent, ReactCommitPhase, ReduxDispatchEvent, RemoteInputEvent,
+};

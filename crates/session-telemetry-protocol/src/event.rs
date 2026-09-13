@@ -11,6 +11,10 @@ pub enum Event {
     Focus(FocusEvent),
     InteractionMarker(InteractionMarkerEvent),
     ReduxDispatch(ReduxDispatchEvent),
+    Network(NetworkEvent),
+    JsStall(JsStallEvent),
+    ReactCommit(ReactCommitEvent),
+    FrameTiming(FrameTimingEvent),
 }
 
 impl Event {
@@ -23,6 +27,10 @@ impl Event {
             Event::Focus(event) => event.sequence,
             Event::InteractionMarker(event) => event.sequence,
             Event::ReduxDispatch(event) => event.sequence,
+            Event::Network(event) => event.sequence,
+            Event::JsStall(event) => event.sequence,
+            Event::ReactCommit(event) => event.sequence,
+            Event::FrameTiming(event) => event.sequence,
         }
     }
 
@@ -33,6 +41,10 @@ impl Event {
             Event::Focus(event) => event.timestamp,
             Event::InteractionMarker(event) => event.timestamp,
             Event::ReduxDispatch(event) => event.timestamp,
+            Event::Network(event) => event.timestamp,
+            Event::JsStall(event) => event.timestamp,
+            Event::ReactCommit(event) => event.timestamp,
+            Event::FrameTiming(event) => event.timestamp,
         }
     }
 }
@@ -69,6 +81,54 @@ pub struct ReduxDispatchEvent {
     pub duration_ms: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub method: String,
+    pub url: String,
+    pub status: u16,
+    pub duration_ms: f64,
+    pub request_bytes: Option<u64>,
+    pub response_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsStallEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub duration_ms: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReactCommitPhase {
+    Mount,
+    Update,
+    NestedUpdate,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReactCommitEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub profiler_id: String,
+    pub phase: ReactCommitPhase,
+    pub actual_duration_ms: f64,
+    pub base_duration_ms: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameTimingEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub duration_ms: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +150,46 @@ mod tests {
         );
         assert_eq!(event.sequence(), 2);
         assert_eq!(event.timestamp(), 12.5);
+    }
+
+    #[test]
+    fn decodes_a_react_commit_event_exactly_as_the_js_library_serializes_it() {
+        let json = r#"{"type":"react-commit","sequence":6,"timestamp":7.0,"profilerId":"CatalogRow","phase":"nested-update","actualDurationMs":12.5,"baseDurationMs":8.1}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            event,
+            Event::ReactCommit(ReactCommitEvent {
+                sequence: 6,
+                timestamp: 7.0,
+                profiler_id: "CatalogRow".to_string(),
+                phase: ReactCommitPhase::NestedUpdate,
+                actual_duration_ms: 12.5,
+                base_duration_ms: 8.1,
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_a_network_event_with_null_byte_counts() {
+        let json = r#"{"type":"network","sequence":4,"timestamp":5.0,"method":"GET","url":"https://api.example.com/program/482","status":200,"durationMs":42.0,"requestBytes":null,"responseBytes":null}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            event,
+            Event::Network(NetworkEvent {
+                sequence: 4,
+                timestamp: 5.0,
+                method: "GET".to_string(),
+                url: "https://api.example.com/program/482".to_string(),
+                status: 200,
+                duration_ms: 42.0,
+                request_bytes: None,
+                response_bytes: None,
+            })
+        );
     }
 
     #[test]
@@ -116,6 +216,34 @@ mod tests {
                 timestamp: 4.0,
                 action_type: "catalog/itemFocused".to_string(),
                 duration_ms: 4.2,
+            }),
+            Event::Network(NetworkEvent {
+                sequence: 4,
+                timestamp: 5.0,
+                method: "GET".to_string(),
+                url: "https://api.example.com/program/482".to_string(),
+                status: 200,
+                duration_ms: 42.0,
+                request_bytes: None,
+                response_bytes: Some(1024),
+            }),
+            Event::JsStall(JsStallEvent {
+                sequence: 5,
+                timestamp: 6.0,
+                duration_ms: 58.0,
+            }),
+            Event::ReactCommit(ReactCommitEvent {
+                sequence: 6,
+                timestamp: 7.0,
+                profiler_id: "CatalogRow".to_string(),
+                phase: ReactCommitPhase::NestedUpdate,
+                actual_duration_ms: 12.5,
+                base_duration_ms: 8.1,
+            }),
+            Event::FrameTiming(FrameTimingEvent {
+                sequence: 7,
+                timestamp: 8.0,
+                duration_ms: 48.2,
             }),
         ];
 
