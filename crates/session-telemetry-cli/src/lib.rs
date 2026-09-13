@@ -35,9 +35,18 @@ pub enum Command {
         device: String,
         #[arg(long)]
         name: String,
+        /// Android application id to send the start signal to (e.g. com.example.app) — the app
+        /// itself can also start on its own via a profiling build's `SessionTelemetry.install()`
+        /// (bidirectional; see main.rs's send_broadcast), so this is best-effort: if the app
+        /// isn't running yet, it'll pick up its own autonomous start when it launches instead.
+        #[arg(long)]
+        package: String,
     },
     /// Stop the active recording.
     Stop,
+    /// Add a workstation-timestamped QA annotation to the active recording, for later mapping
+    /// onto the session's own timeline via clock sync.
+    Mark { label: String },
     /// Analyze a recorded session.
     Analyze {
         /// Path to a chunk JSON file, or "latest" for the most recently pulled one (by file
@@ -57,8 +66,6 @@ pub enum Command {
     },
     /// Show current recording status.
     Status,
-    /// Add a QA bookmark to the active recording.
-    Mark { label: String },
     /// Pull a recorded session's .rnst chunks from the device.
     Pull {
         /// The on-device session directory name (a millisecond timestamp) under
@@ -97,20 +104,35 @@ impl RecordMode {
     }
 }
 
-/// The CLI's own record of "a recording is active" — no live ADB route to the device exists
-/// yet (see architecture.mmd's still-planned `LivePull`), so this doesn't control anything on
-/// the device directly. The app itself starts capturing on its own, via a profiling build's
-/// `SessionTelemetry.install()`; this state file is local bookkeeping so `status`/`stop` can
-/// report on a recording that's presumed to be running, keyed by the name/device the developer
-/// gave `record`. Stored under `~/.session-telemetry/active-session.json` (see main.rs) so it's
-/// consistent regardless of which directory the CLI is invoked from.
+/// A `session-telemetry mark` annotation — plan.md's "QA annotation" row: workstation
+/// timestamp, (eventually) mapped session timestamp, bookmark label. Only the workstation side
+/// is captured here; mapping it onto the session's own timeline needs a `ClockMap` built from
+/// real clock-sync samples, which isn't wired up yet — see `create_bookmark` in
+/// session-telemetry-analysis for the mapping step this feeds into once that exists.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Bookmark {
+    pub label: String,
+    pub workstation_timestamp_unix_ms: u64,
+}
+
+/// The CLI's own record of "a recording is active", and the QA bookmarks captured against it
+/// (see `Bookmark`). Recording is bidirectional: the app itself can start/end a session on its
+/// own (`SessionTelemetry.install()`/`.stop()`), and `record`/`stop` can also bound one
+/// explicitly via an ADB broadcast to `package` (see main.rs's `send_broadcast`) — this state
+/// file is local bookkeeping either way, so `status`/`mark`/`stop` have something to act on.
+/// Stored under `~/.session-telemetry/active-session.json` (see main.rs) so it's consistent
+/// regardless of which directory the CLI is invoked from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionState {
     pub name: String,
     pub mode: RecordMode,
     pub device: String,
+    pub package: String,
     pub started_at_unix_ms: u64,
+    #[serde(default)]
+    pub bookmarks: Vec<Bookmark>,
 }
 
 impl SessionState {
@@ -157,13 +179,23 @@ pub fn format_status(state: Option<&SessionState>, now_unix_ms: u64) -> String {
 
 /// Printed by `session-telemetry stop`.
 pub fn format_stop_summary(state: &SessionState, stopped_at_unix_ms: u64) -> String {
+    let bookmark_note = match state.bookmarks.len() {
+        0 => String::new(),
+        count => format!(" {count} bookmark(s) saved."),
+    };
     format!(
         "Stopped \"{}\" on {} after {}. The captured .rnst chunks remain on the device until \
-         pulled.",
+         pulled.{bookmark_note}",
         state.name,
         state.device,
         format_duration_ms(stopped_at_unix_ms.saturating_sub(state.started_at_unix_ms))
     )
+}
+
+/// Printed by `session-telemetry mark` once the bookmark is appended to the active session's
+/// state.
+pub fn format_mark_confirmation(label: &str, bookmark_count: usize) -> String {
+    format!("Marked \"{label}\" ({bookmark_count} bookmark(s) so far this session).")
 }
 
 fn device_state_label(state: &DeviceState) -> String {
@@ -272,6 +304,8 @@ mod tests {
             "192.168.1.40:5555",
             "--name",
             "catalog-navigation",
+            "--package",
+            "com.rnsessiontelemetry.tvfixture",
         ])
         .unwrap();
 
@@ -281,6 +315,20 @@ mod tests {
                 mode: RecordMode::Targeted,
                 device: "192.168.1.40:5555".to_string(),
                 name: "catalog-navigation".to_string(),
+                package: "com.rnsessiontelemetry.tvfixture".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_mark_with_its_label() {
+        let cli = Cli::try_parse_from(["session-telemetry", "mark", "carousel stopped responding"])
+            .unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Mark {
+                label: "carousel stopped responding".to_string()
             }
         );
     }
@@ -349,7 +397,9 @@ mod tests {
             name: "catalog-navigation".to_string(),
             mode: RecordMode::Qa,
             device: "192.168.1.40:5555".to_string(),
+            package: "com.rnsessiontelemetry.tvfixture".to_string(),
             started_at_unix_ms: 1_000,
+            bookmarks: Vec::new(),
         }
     }
 
@@ -388,6 +438,37 @@ mod tests {
         let summary = format_stop_summary(&state, state.started_at_unix_ms + 65_000);
         assert!(summary.contains("1m 5s"));
         assert!(summary.contains("catalog-navigation"));
+    }
+
+    #[test]
+    fn format_stop_summary_omits_the_bookmark_note_when_there_are_none() {
+        let summary = format_stop_summary(&sample_state(), sample_state().started_at_unix_ms);
+        assert!(!summary.contains("bookmark"));
+    }
+
+    #[test]
+    fn format_stop_summary_mentions_the_bookmark_count() {
+        let mut state = sample_state();
+        state.bookmarks.push(Bookmark {
+            label: "carousel stopped responding".to_string(),
+            workstation_timestamp_unix_ms: 1_500,
+        });
+        state.bookmarks.push(Bookmark {
+            label: "navigation felt delayed".to_string(),
+            workstation_timestamp_unix_ms: 2_500,
+        });
+
+        let summary = format_stop_summary(&state, state.started_at_unix_ms);
+
+        assert!(summary.contains("2 bookmark(s) saved"));
+    }
+
+    #[test]
+    fn format_mark_confirmation_includes_the_label_and_count() {
+        let message = format_mark_confirmation("carousel stopped responding", 2);
+
+        assert!(message.contains("carousel stopped responding"));
+        assert!(message.contains('2'));
     }
 
     #[test]

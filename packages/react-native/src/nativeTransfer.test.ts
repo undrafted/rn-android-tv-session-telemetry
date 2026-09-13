@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { pushEventMock, nativeModulesMock } = vi.hoisted(() => {
+const { pushEventMock, startMock, finishMock, nativeModulesMock } = vi.hoisted(() => {
   const pushEventMock = vi.fn();
+  const startMock = vi.fn();
+  const finishMock = vi.fn();
   return {
     pushEventMock,
-    nativeModulesMock: { RNSessionTelemetryWriter: { pushEvent: pushEventMock } } as Record<string, unknown>,
+    startMock,
+    finishMock,
+    nativeModulesMock: {
+      RNSessionTelemetryWriter: { pushEvent: pushEventMock, start: startMock, finish: finishMock },
+    } as Record<string, unknown>,
   };
 });
 
@@ -12,11 +18,17 @@ vi.mock('react-native', () => ({
   NativeModules: nativeModulesMock,
 }));
 
-const { transferEventToNative } = await import('./nativeTransfer.js');
+const { transferEventToNative, startNativeSession, finishNativeSession } = await import('./nativeTransfer.js');
 
 beforeEach(() => {
   pushEventMock.mockClear();
-  nativeModulesMock.RNSessionTelemetryWriter = { pushEvent: pushEventMock };
+  startMock.mockClear();
+  finishMock.mockClear();
+  nativeModulesMock.RNSessionTelemetryWriter = {
+    pushEvent: pushEventMock,
+    start: startMock,
+    finish: finishMock,
+  };
 });
 
 describe('transferEventToNative', () => {
@@ -50,5 +62,33 @@ describe('transferEventToNative', () => {
       }),
     ).not.toThrow();
     expect(pushEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('startNativeSession', () => {
+  it('calls the native module start()', () => {
+    startNativeSession();
+
+    expect(startMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when the native module is not linked', () => {
+    nativeModulesMock.RNSessionTelemetryWriter = undefined;
+
+    expect(() => startNativeSession()).not.toThrow();
+  });
+});
+
+describe('finishNativeSession', () => {
+  it('calls the native module finish()', () => {
+    finishNativeSession();
+
+    expect(finishMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when the native module is not linked', () => {
+    nativeModulesMock.RNSessionTelemetryWriter = undefined;
+
+    expect(() => finishNativeSession()).not.toThrow();
   });
 });

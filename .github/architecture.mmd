@@ -11,7 +11,7 @@ flowchart LR
         App --> Lib
         FrameTiming --> Lib
         Lib --> Buffer
-        Lib -->|native bridge| Writer
+        Lib -->|native bridge: events · start/finish| Writer
         Collector -.-> Writer
     end
 
@@ -20,15 +20,15 @@ flowchart LR
         Discover["Device discovery"]
         LiveRoute["Live route<br/>(planned)"]
         Pull["Pull + verify<br/>(run-as + checksum)"]
-        Retain["Session retention<br/>(planned)"]
+        Retain["Session retention<br/>(wired into pull)"]
         Discover -.-> LiveRoute
         Discover --> Pull
-        Pull -.-> Retain
+        Pull --> Retain
     end
 
     subgraph Host["Rust host"]
         direction TB
-        CLI["CLI<br/>doctor · devices · analyze · report<br/>record · stop · status · pull<br/>mark (planned)"]
+        CLI["CLI<br/>doctor · devices · analyze · report<br/>record --package · stop · mark · status · pull"]
         Protocol["Protocol<br/>event schema"]
         SessionCrate["Session<br/>chunking · rotation · budget · checksums"]
         Analysis["Analysis<br/>clock mapping · windows · detectors · QA bookmarks"]
@@ -40,3 +40,4 @@ flowchart LR
     Writer --> Pull
     Pull --> CLI
     Buffer -->|fixture| CLI
+    CLI -->|adb broadcast: start/stop session| Writer

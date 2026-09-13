@@ -1,7 +1,7 @@
 import { TVEventHandler, type EventSubscription, type HWEvent } from 'react-native';
 import { createSequenceCounter, monotonicNowMs } from './clock.js';
 import { isRemoteInputEventType, type SessionTelemetryEvent } from './events.js';
-import { transferEventToNative } from './nativeTransfer.js';
+import { finishNativeSession, startNativeSession, transferEventToNative } from './nativeTransfer.js';
 
 export type {
   SessionTelemetryEvent,
@@ -103,12 +103,16 @@ function install(options?: InstallOptions): void {
   previousFocusTarget = null;
   installed = true;
   subscription = TVEventHandler.addListener(handleHardwareEvent);
+  // This is the app's own enable trigger - see nativeTransfer.ts for why this must actually
+  // start durable on-device recording, not just the JS-side buffer/subscriptions above.
+  startNativeSession();
 }
 
 function stop(): void {
   installed = false;
   subscription?.remove();
   subscription = undefined;
+  finishNativeSession();
 }
 
 function mark(name: string): void {

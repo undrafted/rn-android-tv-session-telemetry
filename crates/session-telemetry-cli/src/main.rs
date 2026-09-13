@@ -11,8 +11,9 @@ use session_telemetry_analysis::{
     detect_repeated_redux_dispatches,
 };
 use session_telemetry_cli::{
-    Cli, Command, RecordMode, SessionState, format_devices, format_findings, format_record_started,
-    format_status, format_stop_summary, opener_command, resolve_latest_session_file,
+    Bookmark, Cli, Command, RecordMode, SessionState, format_devices, format_findings,
+    format_mark_confirmation, format_record_started, format_status, format_stop_summary,
+    opener_command, resolve_latest_session_file,
 };
 use session_telemetry_report::{SessionSummary, render_html};
 use session_telemetry_session::Chunk;
@@ -26,8 +27,14 @@ fn main() {
     match cli.command {
         Command::Doctor => run_doctor(),
         Command::Devices => run_devices(),
-        Command::Record { mode, device, name } => run_record(mode, device, name),
+        Command::Record {
+            mode,
+            device,
+            name,
+            package,
+        } => run_record(mode, device, name, package),
         Command::Stop => run_stop(),
+        Command::Mark { label } => run_mark(&label),
         Command::Status => run_status(),
         Command::Analyze { session } => run_analyze(&session),
         Command::Report { session, open } => run_report(&session, open),
@@ -38,7 +45,6 @@ fn main() {
             out,
             keep,
         } => run_pull(&session, &device, &package, out, keep),
-        other => println!("`{other:?}` is not implemented yet."),
     }
 }
 
@@ -121,7 +127,35 @@ fn device_is_connected(device: &str) -> bool {
         .any(|info| info.serial == device && info.state == DeviceState::Device)
 }
 
-fn run_record(mode: RecordMode, device: String, name: String) {
+// Mirrored exactly in SessionWriterModule.kt's ACTION_START_SESSION/ACTION_STOP_SESSION - no
+// shared-constant mechanism across Kotlin and Rust, so keep both sides in sync by hand.
+const ACTION_START_SESSION: &str = "com.rnsessiontelemetry.reactnative.action.START_SESSION";
+const ACTION_STOP_SESSION: &str = "com.rnsessiontelemetry.reactnative.action.STOP_SESSION";
+
+/// Sends a session-control broadcast to `package` on `device`. Best-effort by design, not just
+/// by accident: `record` is commonly run *before* the app has even launched (plan.md's own
+/// workflow example is `record` then "use the TV application"), so there's often nothing alive
+/// yet to receive it - the app's own autonomous start (SessionTelemetry.install() on launch)
+/// covers that case regardless. Returns whether the `adb` invocation itself succeeded, which
+/// only confirms the broadcast was sent, not that anything was listening for it.
+fn send_broadcast(device: &str, package: &str, action: &str) -> bool {
+    ProcessCommand::new("adb")
+        .args([
+            "-s",
+            device,
+            "shell",
+            "am",
+            "broadcast",
+            "-a",
+            action,
+            "-p",
+            package,
+        ])
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn run_record(mode: RecordMode, device: String, name: String, package: String) {
     if load_session_state().is_some() {
         eprintln!(
             "A recording is already active. Run `session-telemetry stop` first, or `session-telemetry status` to see what's running."
@@ -135,19 +169,62 @@ fn run_record(mode: RecordMode, device: String, name: String) {
         exit(1);
     }
 
+    send_broadcast(&device, &package, ACTION_START_SESSION);
+
     let state = SessionState {
         name,
         mode,
         device,
+        package,
         started_at_unix_ms: now_unix_ms(),
+        bookmarks: Vec::new(),
     };
     save_session_state(&state);
     println!("{}", format_record_started(&state));
 }
 
+/// `~/.session-telemetry/bookmarks/<name>-<started_at_unix_ms>.json` — durable, unlike
+/// `active-session.json` which `stop` deletes. Keyed by name + start time (not just name) so
+/// re-recording under the same name doesn't silently overwrite an earlier run's bookmarks.
+fn bookmarks_file_path(state: &SessionState) -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home)
+        .join(".session-telemetry")
+        .join("bookmarks")
+        .join(format!("{}-{}.json", state.name, state.started_at_unix_ms))
+}
+
+fn run_mark(label: &str) {
+    let Some(mut state) = load_session_state() else {
+        eprintln!("No active recording. Run `session-telemetry record` first.");
+        exit(1);
+    };
+    state.bookmarks.push(Bookmark {
+        label: label.to_string(),
+        workstation_timestamp_unix_ms: now_unix_ms(),
+    });
+    let bookmark_count = state.bookmarks.len();
+    save_session_state(&state);
+    println!("{}", format_mark_confirmation(label, bookmark_count));
+}
+
 fn run_stop() {
     match load_session_state() {
         Some(state) => {
+            send_broadcast(&state.device, &state.package, ACTION_STOP_SESSION);
+
+            if !state.bookmarks.is_empty() {
+                let path = bookmarks_file_path(&state);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Ok(json) = serde_json::to_string_pretty(&state.bookmarks)
+                    && std::fs::write(&path, json).is_ok()
+                {
+                    println!("Bookmarks saved to {}", path.display());
+                }
+            }
+
             println!("{}", format_stop_summary(&state, now_unix_ms()));
             clear_session_state();
         }

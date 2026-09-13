@@ -1,5 +1,10 @@
 package com.rnsessiontelemetry.reactnative
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -9,46 +14,122 @@ import java.io.File
 
 // Receives every event the JS library records (nativeTransfer.ts), independent of the JS
 // library's own bounded in-memory buffer - the whole point of transferring to native at all is
-// durability past what that sliding window keeps. Lazily opens a fresh on-device .rnst session
-// (NativeSessionWriter, backed by the session-telemetry-android Rust crate via JNI) on the
-// first event of each process lifetime, under this app's private files directory.
+// durability past what that sliding window keeps. Writes to a fresh on-device .rnst session
+// (NativeSessionWriter, backed by the session-telemetry-android Rust crate via JNI) under this
+// app's private files directory, only while a session is actually open.
+//
+// No session opens implicitly: pushEvent() with no session open is a no-op (mirrors the JS
+// library's own `installed` gate in index.ts), and nothing here opens one lazily. A session
+// starts only via an explicit start(), which is bidirectional - both the app itself
+// (SessionTelemetry.install() in index.ts, JS-callable via the @ReactMethod below) and
+// `session-telemetry record`/`stop` (workstation side, via `adb shell am broadcast` - see
+// ACTION_START_SESSION/ACTION_STOP_SESSION) can start or end one.
 class SessionWriterModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
   private var handle: Long = 0
   private var outputDir: File? = null
 
+  // Only ever transitions false->true once, on the push that actually crosses the budget -
+  // RotatingChunkWriter (Rust) stays permanently stopped after that, so every push (silently)
+  // returning OUTCOME_BUDGET_EXCEEDED afterward doesn't re-log. Reset on each fresh session.
+  private var loggedBudgetExceeded = false
+
+  // Registered dynamically (not in the manifest) rather than as a manifest-declared receiver,
+  // so it works with zero app-side wiring beyond this library being linked, and isn't subject
+  // to Android's background-execution limits on manifest receivers - this one only needs to
+  // work while the app process (and therefore this module) is alive, which is exactly when a
+  // session could be open anyway.
+  private val sessionControlReceiver =
+      object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+          when (intent.action) {
+            ACTION_START_SESSION -> startFreshSession()
+            ACTION_STOP_SESSION -> finishSession()
+          }
+        }
+      }
+
+  override fun initialize() {
+    super.initialize()
+    val filter =
+        IntentFilter().apply {
+          addAction(ACTION_START_SESSION)
+          addAction(ACTION_STOP_SESSION)
+        }
+    // RECEIVER_EXPORTED (API 33+) is required, not RECEIVER_NOT_EXPORTED: `adb shell am
+    // broadcast` is sent from the shell's own process/UID, a different app from ours, so this
+    // receiver must be reachable cross-app. Below API 33 there's no such flag to pass at all.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      reactApplicationContext.registerReceiver(
+          sessionControlReceiver,
+          filter,
+          Context.RECEIVER_EXPORTED,
+      )
+    } else {
+      @Suppress("UnspecifiedRegisterReceiverFlag")
+      reactApplicationContext.registerReceiver(sessionControlReceiver, filter)
+    }
+  }
+
+  override fun invalidate() {
+    super.invalidate()
+    // Only ever throws if already unregistered (or never registered) - neither is a real error
+    // here, just the module tearing down more than once.
+    runCatching { reactApplicationContext.unregisterReceiver(sessionControlReceiver) }
+  }
+
   override fun getName(): String = NAME
 
   @Synchronized
-  private fun ensureOpen(): Long {
-    if (handle == 0L) {
-      val dir = File(reactApplicationContext.filesDir, "rnst-sessions/${System.currentTimeMillis()}")
-      dir.mkdirs()
-      outputDir = dir
-      handle =
-          NativeSessionWriter.nativeOpen(
-              dir.absolutePath,
-              maxChunkBytes = DEFAULT_MAX_CHUNK_BYTES,
-              maxChunkDurationMs = DEFAULT_MAX_CHUNK_DURATION_MS,
-              budgetBytes = DEFAULT_BUDGET_BYTES,
-          )
-    }
-    return handle
+  private fun currentHandle(): Long = handle
+
+  // Shared by both trigger paths (JS-callable start() and the ACTION_START_SESSION broadcast):
+  // any currently-open writer is sealed first, then a new one begins, so calling this always
+  // yields a clean session boundary regardless of what was already open.
+  @Synchronized
+  private fun startFreshSession() {
+    finishSessionLocked()
+    openNewSessionLocked()
   }
 
-  // Only ever transitions Warning->error once, on the push that actually crosses the budget -
-  // RotatingChunkWriter (Rust) stays permanently stopped after that, so every push
-  // (silently) returning OUTCOME_BUDGET_EXCEEDED afterward doesn't re-log.
-  private var loggedBudgetExceeded = false
+  @Synchronized
+  private fun finishSession() {
+    finishSessionLocked()
+  }
 
-  @ReactMethod
-  fun pushEvent(eventJson: String) {
-    val currentHandle = ensureOpen()
+  // Callers must already hold this module's monitor - only called from the @Synchronized
+  // methods above, via Kotlin/Java's reentrant `synchronized`.
+  private fun openNewSessionLocked() {
+    val dir = File(reactApplicationContext.filesDir, "rnst-sessions/${System.currentTimeMillis()}")
+    dir.mkdirs()
+    outputDir = dir
+    handle =
+        NativeSessionWriter.nativeOpen(
+            dir.absolutePath,
+            maxChunkBytes = DEFAULT_MAX_CHUNK_BYTES,
+            maxChunkDurationMs = DEFAULT_MAX_CHUNK_DURATION_MS,
+            budgetBytes = DEFAULT_BUDGET_BYTES,
+        )
+    loggedBudgetExceeded = false
+  }
+
+  private fun finishSessionLocked() {
+    val currentHandle = handle
     if (currentHandle == 0L) {
       return
     }
-    val outcome = NativeSessionWriter.nativePushEvent(currentHandle, eventJson)
+    handle = 0
+    NativeSessionWriter.nativeFinish(currentHandle)
+  }
+
+  @ReactMethod
+  fun pushEvent(eventJson: String) {
+    val handle = currentHandle()
+    if (handle == 0L) {
+      return
+    }
+    val outcome = NativeSessionWriter.nativePushEvent(handle, eventJson)
     if (outcome == NativeSessionWriter.OUTCOME_BUDGET_EXCEEDED && !loggedBudgetExceeded) {
       loggedBudgetExceeded = true
       Log.w(
@@ -60,22 +141,26 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
   }
 
   // Exposed for verification/pull tooling to locate this session's chunk files without
-  // guessing the timestamp ensureOpen() picked; null until the first event opens a session.
+  // guessing the timestamp openNewSessionLocked() picked; null until a session has opened.
   @ReactMethod
   fun getOutputDirectory(promise: Promise) {
     promise.resolve(outputDir?.absolutePath)
   }
 
-  // Seals the final in-progress chunk and frees the native writer. Not wired to SessionTelemetry
-  // .stop() yet - that lifecycle wiring is separate, upcoming work (record/stop).
+  // The JS-callable equivalent of the ACTION_START_SESSION broadcast - called from
+  // SessionTelemetry.install() (index.ts) so the app's own enable function actually starts
+  // durable on-device recording, not just the JS-side buffer/subscriptions.
+  @ReactMethod
+  fun start() {
+    startFreshSession()
+  }
+
+  // Seals the final in-progress chunk and frees the native writer - the JS-callable equivalent
+  // of the ACTION_STOP_SESSION broadcast, called from SessionTelemetry.stop() (index.ts) so the
+  // app's own disable function actually seals recording, not just stopping JS-side capture.
   @ReactMethod
   fun finish() {
-    val currentHandle = handle
-    if (currentHandle == 0L) {
-      return
-    }
-    handle = 0
-    NativeSessionWriter.nativeFinish(currentHandle)
+    finishSession()
   }
 
   companion object {
@@ -89,5 +174,11 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
     // chunks and the in-progress one combined - see RotatingChunkWriter::with_budget), so a
     // multi-hour QA capture can't silently fill the device's storage.
     const val DEFAULT_BUDGET_BYTES = 200L * 1024 * 1024
+
+    // Mirrored exactly in session-telemetry-cli/src/main.rs's send_broadcast calls - there's no
+    // shared-constant mechanism across Kotlin and Rust, so keep both sides in sync by hand if
+    // either changes.
+    const val ACTION_START_SESSION = "com.rnsessiontelemetry.reactnative.action.START_SESSION"
+    const val ACTION_STOP_SESSION = "com.rnsessiontelemetry.reactnative.action.STOP_SESSION"
   }
 }
