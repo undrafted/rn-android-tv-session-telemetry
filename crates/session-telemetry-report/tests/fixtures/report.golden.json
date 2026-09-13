@@ -16,6 +16,7 @@
     "resourceSamplingStartedCount": 0,
     "resourceSampleCount": 0,
     "resourceSamplingStoppedCount": 0,
+    "lifecycleCount": 0,
     "lossCount": 1,
     "sequenceStart": 0,
     "sequenceEnd": 1,

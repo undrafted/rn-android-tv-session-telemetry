@@ -2,7 +2,7 @@ use crate::report::{FindingWithEvidence, Report};
 use crate::resource_sampling::ResourceSamplingWindowSummary;
 use crate::summary::SessionSummary;
 use session_telemetry_analysis::{QaBookmark, SelectorStats, Severity};
-use session_telemetry_protocol::{Event, ReactCommitPhase, SessionMetadataEvent};
+use session_telemetry_protocol::{Event, LifecycleState, ReactCommitPhase, SessionMetadataEvent};
 
 /// Bounded HTML previews. The CLI links the complete paged JSON export.
 pub fn render_html(report: &Report) -> String {
@@ -365,6 +365,7 @@ const EVENT_TYPE_FILTERS: &[(&str, &str)] = &[
     ("resource-sampling-started", "Resource sampling started"),
     ("resource-sample", "Resource sample"),
     ("resource-sampling-stopped", "Resource sampling stopped"),
+    ("lifecycle", "Lifecycle"),
 ];
 
 fn event_type_tag(event: &Event) -> &'static str {
@@ -384,6 +385,7 @@ fn event_type_tag(event: &Event) -> &'static str {
         Event::ResourceSamplingStarted(_) => "resource-sampling-started",
         Event::ResourceSample(_) => "resource-sample",
         Event::ResourceSamplingStopped(_) => "resource-sampling-stopped",
+        Event::Lifecycle(_) => "lifecycle",
     }
 }
 
@@ -543,6 +545,13 @@ fn describe_event(event: &Event) -> String {
             event.cpu_utilization_percent, event.native_heap_kb, event.java_heap_kb
         ),
         Event::ResourceSamplingStopped(_) => "Resource sampling stopped".to_string(),
+        Event::Lifecycle(event) => format!(
+            "Lifecycle: {}",
+            match event.state {
+                LifecycleState::Foreground => "foreground",
+                LifecycleState::Background => "background",
+            }
+        ),
     }
 }
 

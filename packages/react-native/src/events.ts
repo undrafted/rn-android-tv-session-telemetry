@@ -159,6 +159,18 @@ export interface ResourceSamplingStoppedEvent {
   timestamp: number;
 }
 
+// An app-wide foreground/background transition, captured automatically once install() runs (see
+// lifecycle.ts) - no application call needed, the same self-contained tier as network and
+// JS-stall capture (unlike frame timing/focus, which the app still starts explicitly). Reflects
+// Application.ActivityLifecycleCallbacks' started/stopped counts, not a single Activity's own
+// state, so this stays correct even if the host app has more than one Activity.
+export interface LifecycleEvent {
+  type: 'lifecycle';
+  sequence: number;
+  timestamp: number;
+  state: 'foreground' | 'background';
+}
+
 export type SessionTelemetryEvent =
   | RemoteInputEvent
   | FocusEvent
@@ -174,7 +186,8 @@ export type SessionTelemetryEvent =
   | SelectorEvent
   | ResourceSamplingStartedEvent
   | ResourceSampleEvent
-  | ResourceSamplingStoppedEvent;
+  | ResourceSamplingStoppedEvent
+  | LifecycleEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,

@@ -18,6 +18,7 @@ class RnSessionTelemetryPackage : ReactPackage {
           SessionWriterModule(reactContext),
           GlobalFocusModule(reactContext),
           ResourceSamplingModule(reactContext),
+          LifecycleModule(reactContext),
       )
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =

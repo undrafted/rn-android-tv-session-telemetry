@@ -13,6 +13,7 @@ flowchart TD
     ReactCommit["React commits<br/>withTelemetryRoot at root registration<br/>profiling Fabric renderer<br/>render work + renderStartMs / commitTimeMs<br/>elapsed interval may include pauses"] --> Timeline
     FrameTiming["Android frame timing<br/>via native FrameMetrics listener"] --> Timeline
     ResourceSampling["Resource samples (CPU/memory)<br/>explicit startResourceSampling()/stopResourceSampling(),<br/>off by default, native HandlerThread sampler"] --> Timeline
+    Lifecycle["Foreground/background transitions<br/>automatic at install(), ActivityLifecycleCallbacks<br/>(evidence only, no dedicated detector)"] --> Timeline
 
     ClockSync["Clock-sync samples<br/>periodic, piggybacked on other<br/>event pushes (~30s) + once at install()"] --> ClockMapping["Clock mapping (ClockMap)<br/>fits offset + scale from samples"]
     ClockMapping --> ReportOut

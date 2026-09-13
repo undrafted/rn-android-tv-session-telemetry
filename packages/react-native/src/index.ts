@@ -10,6 +10,7 @@ import {
   transferEventToNative,
 } from './nativeTransfer.js';
 import { startNativeResourceSampling, stopNativeResourceSampling } from './resourceSampling.js';
+import { startLifecycleMonitor } from './lifecycle.js';
 
 export type {
   SessionTelemetryEvent,
@@ -27,8 +28,10 @@ export type {
   ResourceSamplingStartedEvent,
   ResourceSampleEvent,
   ResourceSamplingStoppedEvent,
+  LifecycleEvent,
 } from './events.js';
 export { startGlobalFocusMonitor } from './globalFocus.js';
+export { startLifecycleMonitor } from './lifecycle.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
 export { startStallMonitor, type StallMonitorOptions } from './stall.js';
 export { onProfilerRender, withTelemetryRoot } from './profiler.js';
@@ -101,6 +104,7 @@ export interface SessionTelemetryApi {
     inputsChanged: boolean,
     resultChanged: boolean,
   ): void;
+  recordLifecycleTransition(state: 'foreground' | 'background'): void;
   // Temporary: exposes the in-memory buffer until a native chunk writer exists. Not part of
   // the stable V1 API surface.
   getBufferedEvents(): readonly SessionTelemetryEvent[];
@@ -120,6 +124,7 @@ const CLOCK_SYNC_INTERVAL_MS = 30_000;
 const nextSequence = createSequenceCounter();
 
 let stopNetworkCapture: (() => void) | undefined;
+let stopLifecycleMonitor: (() => void) | undefined;
 let subscription: EventSubscription | undefined;
 let nativeSessionOpenedUnsubscribe: (() => void) | undefined;
 let previousFocusTarget: string | null = null;
@@ -215,6 +220,7 @@ function handleHardwareEvent(event: HWEvent): void {
 function install(options?: InstallOptions): void {
   stopStallMonitor();
   stopNetworkCapture?.();
+  stopLifecycleMonitor?.();
   subscription?.remove();
   nativeSessionOpenedUnsubscribe?.();
   // A window left open from a previous install() must not silently carry into this one - unlike
@@ -254,6 +260,7 @@ function install(options?: InstallOptions): void {
   emitSessionMetadata(options);
   stopNetworkCapture = startNetworkCapture(recordNetworkRequest, options?.network);
   startStallMonitor(options?.stall);
+  stopLifecycleMonitor = startLifecycleMonitor();
 }
 
 function stop(): void {
@@ -261,6 +268,8 @@ function stop(): void {
   stopStallMonitor();
   stopNetworkCapture?.();
   stopNetworkCapture = undefined;
+  stopLifecycleMonitor?.();
+  stopLifecycleMonitor = undefined;
   subscription?.remove();
   subscription = undefined;
   nativeSessionOpenedUnsubscribe?.();
@@ -425,6 +434,19 @@ function recordSelector(
   });
 }
 
+function recordLifecycleTransition(state: 'foreground' | 'background'): void {
+  if (!installed) {
+    return;
+  }
+  maybeEmitClockSync();
+  pushToBufferAndNative({
+    type: 'lifecycle',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    state,
+  });
+}
+
 // A short-interval default suited to a targeted capture - a QA capture wanting coarser, lower-
 // overhead sampling over a longer session passes a larger intervalMs explicitly.
 const DEFAULT_RESOURCE_SAMPLING_INTERVAL_MS = 500;
@@ -500,6 +522,7 @@ export const SessionTelemetry: SessionTelemetryApi = {
   recordFrameTiming,
   recordReactCommit,
   recordSelector,
+  recordLifecycleTransition,
   startResourceSampling,
   stopResourceSampling,
   recordResourceSample,

@@ -22,6 +22,7 @@ pub enum Event {
     ResourceSamplingStarted(ResourceSamplingStartedEvent),
     ResourceSample(ResourceSampleEvent),
     ResourceSamplingStopped(ResourceSamplingStoppedEvent),
+    Lifecycle(LifecycleEvent),
 }
 
 impl Event {
@@ -45,6 +46,7 @@ impl Event {
             Event::ResourceSamplingStarted(event) => event.sequence,
             Event::ResourceSample(event) => event.sequence,
             Event::ResourceSamplingStopped(event) => event.sequence,
+            Event::Lifecycle(event) => event.sequence,
         }
     }
 
@@ -68,6 +70,7 @@ impl Event {
             Event::ResourceSamplingStarted(event) => event.timestamp,
             Event::ResourceSample(event) => event.timestamp,
             Event::ResourceSamplingStopped(event) => event.timestamp,
+            Event::Lifecycle(event) => event.timestamp,
         }
     }
 }
@@ -280,6 +283,30 @@ pub struct ResourceSamplingStoppedEvent {
     pub timestamp: f64,
 }
 
+/// One of the two states an app-wide lifecycle transition can enter. `Foreground` fires when the
+/// first activity starts (or a backgrounded app returns); `Background` fires when the last
+/// activity stops. Tracked via `Application.registerActivityLifecycleCallbacks`'
+/// started/stopped counts, not a single activity's own state, so this reflects the whole app's
+/// visibility even if it hosts more than one activity.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LifecycleState {
+    Foreground,
+    Background,
+}
+
+/// An app-wide foreground/background transition, captured automatically once `install()` runs
+/// (same self-contained tier as network and JS-stall capture — no application call needed,
+/// unlike frame timing/focus, which the app still starts explicitly). `LifecycleModule.kt` is
+/// the source; see `LifecycleState`'s own doc comment for exactly when each state fires.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub state: LifecycleState,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,6 +487,11 @@ mod tests {
                 sequence: 14,
                 timestamp: 15.0,
             }),
+            Event::Lifecycle(LifecycleEvent {
+                sequence: 15,
+                timestamp: 16.0,
+                state: LifecycleState::Background,
+            }),
         ];
 
         for event in events {
@@ -566,6 +598,31 @@ mod tests {
             Event::ResourceSamplingStopped(ResourceSamplingStoppedEvent {
                 sequence: 14,
                 timestamp: 15.0,
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_lifecycle_events_exactly_as_the_native_module_serializes_them() {
+        let foreground_json =
+            r#"{"type":"lifecycle","sequence":15,"timestamp":16.0,"state":"foreground"}"#;
+        let background_json =
+            r#"{"type":"lifecycle","sequence":16,"timestamp":17.0,"state":"background"}"#;
+
+        assert_eq!(
+            serde_json::from_str::<Event>(foreground_json).unwrap(),
+            Event::Lifecycle(LifecycleEvent {
+                sequence: 15,
+                timestamp: 16.0,
+                state: LifecycleState::Foreground,
+            })
+        );
+        assert_eq!(
+            serde_json::from_str::<Event>(background_json).unwrap(),
+            Event::Lifecycle(LifecycleEvent {
+                sequence: 16,
+                timestamp: 17.0,
+                state: LifecycleState::Background,
             })
         );
     }
