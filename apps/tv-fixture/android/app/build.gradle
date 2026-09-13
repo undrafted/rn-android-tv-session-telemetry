@@ -58,6 +58,21 @@ react {
     autolinkLibrariesWithApp()
 }
 
+// BundleHermesCTask's own input file tree excludes `**/node_modules/**/*`, which is where this
+// monorepo's workspace packages resolve to - so Gradle never sees packages/*/dist/*.js changes
+// and can skip re-bundling stale JS. Tracking those dirs as extra inputs fixes it. Matches by
+// name prefix/suffix since the task name varies per build type.
+afterEvaluate {
+    tasks.matching { it.name.startsWith("createBundle") && it.name.endsWith("JsAndAssets") }.configureEach { bundleTask ->
+        bundleTask.inputs.files(
+            fileTree("$rootDir/../../../packages/react-native/dist") { include("**/*.js") }
+        ).withPropertyName("rnSessionTelemetryReactNativeDist")
+        bundleTask.inputs.files(
+            fileTree("$rootDir/../../../packages/redux/dist") { include("**/*.js") }
+        ).withPropertyName("rnSessionTelemetryReduxDist")
+    }
+}
+
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
@@ -114,14 +129,10 @@ android {
         // __RN_SESSION_TELEMETRY_ENABLED__ Babel define resolves to `true` instead of being
         // dead-code-eliminated.
         //
-        // Known gap, confirmed against a real build: `createBundleProfilingJsAndAssets`
-        // (React Native Gradle Plugin's BundleHermesCTask) has no Gradle-DSL environment hook and
-        // doesn't track env vars as task inputs, so it silently inherits whatever environment the
-        // Gradle daemon happened to start with - a plain `npm run android` can produce a bundle
-        // with the flag compiled to `false` (nothing recorded, no error) if a stale daemon is
-        // already running. Until this is fixed properly, build with
-        // `RNST_PROFILING=1 ./gradlew --no-daemon :app:installProfiling` (or stop any running
-        // daemon first) to guarantee the flag actually takes effect.
+        // Known gap: the bundle task has no Gradle-DSL environment hook and doesn't track env
+        // vars as inputs, so it silently inherits whatever env a stale daemon already has -
+        // `npm run android` can produce a build with the flag compiled to `false`, no error.
+        // Always build with `RNST_PROFILING=1 ./gradlew --no-daemon :app:installProfiling`.
         profiling {
             initWith release
             matchingFallbacks = ['release']

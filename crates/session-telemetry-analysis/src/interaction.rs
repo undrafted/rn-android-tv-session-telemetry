@@ -37,10 +37,10 @@ impl InteractionWindow {
 
 /// Groups events into one window per remote input. A window ends at the next `VisibleUpdate`
 /// event (the window's ultimate result) or at the next `RemoteInput` event (a new input arrived
-/// before this one produced a visible update), whichever comes first. `Focus` no longer ends the
-/// window on its own — it's recorded and scanning continues, so events between a focus change
-/// and its eventual visible update (redux dispatches, react commits, frame timings) still land
-/// in this window rather than leaking into the next one.
+/// before this one produced a visible update), whichever comes first. `Focus` is recorded but
+/// does not end the window on its own, so events between a focus change and its eventual visible
+/// update (redux dispatches, react commits, frame timings) land in this window rather than
+/// leaking into the next one.
 pub fn build_interaction_windows(events: &[Event]) -> Vec<InteractionWindow> {
     let mut windows = Vec::new();
 
