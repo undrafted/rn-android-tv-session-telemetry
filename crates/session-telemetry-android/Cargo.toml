@@ -1,0 +1,17 @@
+[package]
+name = "session-telemetry-android"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+# Android loads this as a shared library via System.loadLibrary(); "session_telemetry_android"
+# rlib output isn't needed since nothing in this workspace links against this crate as a Rust
+# dependency - only the JNI symbols it exports matter.
+crate-type = ["cdylib"]
+
+[dependencies]
+session-telemetry-protocol.workspace = true
+session-telemetry-session.workspace = true
+serde_json.workspace = true
+jni.workspace = true

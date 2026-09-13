@@ -13,9 +13,8 @@ pub struct RotationPolicy {
 pub enum PushOutcome {
     Recorded,
     /// The total-storage budget is exhausted; this event was rejected and the writer will
-    /// reject every subsequent one too. Plan.md section 5: "When the configured disk budget is
-    /// reached, V1 stops recording cleanly and seals the session. It does not silently
-    /// overwrite earlier evidence." Everything accepted before this point is untouched and
+    /// reject every subsequent one too, recording nothing further rather than silently
+    /// overwriting earlier evidence. Everything accepted before this point is untouched and
     /// still retrievable via `finish()`.
     BudgetExceeded,
 }
@@ -66,8 +65,23 @@ impl RotatingChunkWriter {
     }
 
     pub fn push(&mut self, event: Event) -> PushOutcome {
+        let (outcome, chunk) = self.push_and_take_sealed(event);
+        if let Some(chunk) = chunk {
+            self.sealed.push(chunk);
+        }
+        outcome
+    }
+
+    /// Like `push`, but returns the chunk sealed by this call (if rotation was triggered)
+    /// directly to the caller instead of accumulating it in `self.sealed` — lets a caller that
+    /// needs durability (e.g. the on-device session writer) persist each chunk immediately as
+    /// it's sealed, rather than only learning about it via `finish()` once the whole session
+    /// ends. The caller becomes solely responsible for a chunk returned this way; it is not
+    /// also kept internally, so mixing this with `push`/`finish` on the same writer would lose
+    /// track of chunks sealed via this method.
+    pub fn push_and_take_sealed(&mut self, event: Event) -> (PushOutcome, Option<Chunk>) {
         if self.stopped {
-            return PushOutcome::BudgetExceeded;
+            return (PushOutcome::BudgetExceeded, None);
         }
 
         // Encoded size of just this one event — an incrementally maintained running total,
@@ -78,7 +92,7 @@ impl RotatingChunkWriter {
             && self.total_encoded_size_bytes + event_size_bytes > budget
         {
             self.stopped = true;
-            return PushOutcome::BudgetExceeded;
+            return (PushOutcome::BudgetExceeded, None);
         }
 
         let timestamp = event.timestamp();
@@ -92,26 +106,28 @@ impl RotatingChunkWriter {
         let exceeds_size = self.current_encoded_size_bytes >= self.policy.max_encoded_size_bytes;
         let exceeds_duration = duration_ms >= self.policy.max_duration_ms;
 
-        if exceeds_size || exceeds_duration {
-            self.rotate();
-        }
+        let sealed_chunk = if exceeds_size || exceeds_duration {
+            self.rotate()
+        } else {
+            None
+        };
 
-        PushOutcome::Recorded
+        (PushOutcome::Recorded, sealed_chunk)
     }
 
-    fn rotate(&mut self) {
+    fn rotate(&mut self) -> Option<Chunk> {
         let writer = std::mem::take(&mut self.current);
-        if let Some(chunk) = writer.seal() {
-            self.sealed.push(chunk);
-        }
         self.current_encoded_size_bytes = 0;
         self.current_start_timestamp = None;
+        writer.seal()
     }
 
     /// Seals whatever's left accumulated (e.g. at session end, where the last chunk usually
     /// hasn't hit a rotation threshold) and returns every sealed chunk in order.
     pub fn finish(mut self) -> Vec<Chunk> {
-        self.rotate();
+        if let Some(chunk) = self.rotate() {
+            self.sealed.push(chunk);
+        }
         self.sealed
     }
 }
@@ -131,6 +147,26 @@ mod tests {
 
     fn chunk_sizes(chunks: &[Chunk]) -> Vec<usize> {
         chunks.iter().map(|chunk| chunk.events.len()).collect()
+    }
+
+    #[test]
+    fn push_and_take_sealed_returns_the_chunk_only_on_the_push_that_rotates() {
+        let one_event_size = serde_json::to_vec(&event(0, 0.0)).unwrap().len();
+        let mut writer = RotatingChunkWriter::new(RotationPolicy {
+            max_encoded_size_bytes: one_event_size * 2,
+            max_duration_ms: f64::INFINITY,
+        });
+
+        let (outcome, chunk) = writer.push_and_take_sealed(event(0, 0.0));
+        assert_eq!(outcome, PushOutcome::Recorded);
+        assert_eq!(chunk, None);
+
+        let (outcome, chunk) = writer.push_and_take_sealed(event(1, 1.0));
+        assert_eq!(outcome, PushOutcome::Recorded);
+        assert_eq!(chunk.map(|c| c.events.len()), Some(2));
+
+        // The chunk returned above was handed to the caller, not kept internally.
+        assert_eq!(writer.finish(), vec![]);
     }
 
     #[test]

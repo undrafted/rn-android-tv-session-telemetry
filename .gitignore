@@ -13,6 +13,10 @@ target/
 # output is ignored here instead.
 **/android/build/
 
+# Cross-compiled by cargo-ndk (see packages/react-native/android/build.gradle) - generated,
+# not source.
+packages/react-native/android/src/main/jniLibs/
+
 # Recorded sessions (large, machine-specific — keep fixtures/sessions curated instead)
 *.rnst
 

@@ -5,6 +5,27 @@ def getExtOrDefault(name, defaultValue) {
   return rootProject.ext.has(name) ? rootProject.ext.get(name) : defaultValue
 }
 
+// The on-device session writer's native counterpart (NativeSessionWriter.kt) is backed by the
+// session-telemetry-android Rust crate, which reuses session-telemetry-session's chunk/checksum
+// code directly via JNI rather than reimplementing the .rnst format a second time in Kotlin.
+// cargo-ndk cross-compiles it and writes straight into src/main/jniLibs in the exact directory
+// shape Gradle already expects prebuilt native libraries in, so no separate copy step is
+// needed. arm64-v8a only for now, matching every Android TV device and emulator this project
+// currently targets - add more -t flags here if that ever needs to broaden.
+def rustWorkspaceRoot = file("${projectDir}/../../..")
+
+tasks.register("cargoNdkBuildSessionWriter", Exec) {
+  workingDir = rustWorkspaceRoot
+  commandLine "cargo", "ndk", "-t", "arm64-v8a", "-o", "${projectDir}/src/main/jniLibs", "build",
+      "-p", "session-telemetry-android"
+}
+
+afterEvaluate {
+  tasks.named("preBuild").configure {
+    dependsOn "cargoNdkBuildSessionWriter"
+  }
+}
+
 android {
   namespace "com.rnsessiontelemetry.reactnative"
   compileSdk getExtOrDefault("compileSdkVersion", 36)
