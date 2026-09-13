@@ -122,6 +122,23 @@ describe('recordDispatch', () => {
   });
 });
 
+describe('recordReactCommit', () => {
+  it('records the profiler id, phase, and durations', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.recordReactCommit('CatalogRow', 'update', 12.5, 8.1);
+
+    expect(SessionTelemetry.getBufferedEvents()).toEqual([
+      expect.objectContaining({
+        type: 'react-commit',
+        profilerId: 'CatalogRow',
+        phase: 'update',
+        actualDurationMs: 12.5,
+        baseDurationMs: 8.1,
+      }),
+    ]);
+  });
+});
+
 describe('bounded buffer', () => {
   it('evicts the oldest event once maxBufferedEvents is reached', () => {
     SessionTelemetry.install({ maxBufferedEvents: 2 });

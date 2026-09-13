@@ -47,13 +47,28 @@ export interface JsStallEvent {
   durationMs: number;
 }
 
+export interface ReactCommitEvent {
+  type: 'react-commit';
+  sequence: number;
+  timestamp: number;
+  // React's own Profiler onRender identifiers/measurements, passed through unchanged — see
+  // plan.md section 14 #2 ("React commit measurement mechanism"): the public Profiler API is
+  // the documented hook, not an internal one that could change under us (section 13's risk
+  // table: "prefer public profiler hooks and documented markers").
+  profilerId: string;
+  phase: 'mount' | 'update' | 'nested-update';
+  actualDurationMs: number;
+  baseDurationMs: number;
+}
+
 export type SessionTelemetryEvent =
   | RemoteInputEvent
   | FocusEvent
   | InteractionMarkerEvent
   | ReduxDispatchEvent
   | NetworkEvent
-  | JsStallEvent;
+  | JsStallEvent
+  | ReactCommitEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,

@@ -10,10 +10,12 @@ export type {
   ReduxDispatchEvent,
   NetworkEvent,
   JsStallEvent,
+  ReactCommitEvent,
 } from './events.js';
 export { FocusableView, type FocusableViewProps } from './FocusableView.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
 export { startStallMonitor, type StallMonitorOptions } from './stall.js';
+export { onProfilerRender } from './profiler.js';
 
 export interface InstallOptions {
   // Once the buffer reaches this size, the oldest event is dropped for each new one recorded
@@ -37,6 +39,12 @@ export interface SessionTelemetryApi {
     responseBytes: number | null,
   ): void;
   recordJsStall(durationMs: number): void;
+  recordReactCommit(
+    profilerId: string,
+    phase: 'mount' | 'update' | 'nested-update',
+    actualDurationMs: number,
+    baseDurationMs: number,
+  ): void;
   // Temporary: exposes the in-memory buffer until a native chunk writer exists (plan.md
   // Week 4 gate). Not part of the stable V1 API surface.
   getBufferedEvents(): readonly SessionTelemetryEvent[];
@@ -171,6 +179,26 @@ function recordJsStall(durationMs: number): void {
   });
 }
 
+function recordReactCommit(
+  profilerId: string,
+  phase: 'mount' | 'update' | 'nested-update',
+  actualDurationMs: number,
+  baseDurationMs: number,
+): void {
+  if (!installed) {
+    return;
+  }
+  pushEvent({
+    type: 'react-commit',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    profilerId,
+    phase,
+    actualDurationMs,
+    baseDurationMs,
+  });
+}
+
 function getBufferedEvents(): readonly SessionTelemetryEvent[] {
   return buffer;
 }
@@ -187,6 +215,7 @@ export const SessionTelemetry: SessionTelemetryApi = {
   recordDispatch,
   recordNetworkRequest,
   recordJsStall,
+  recordReactCommit,
   getBufferedEvents,
   getDroppedEventCount,
 };

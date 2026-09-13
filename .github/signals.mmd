@@ -6,7 +6,7 @@ flowchart TD
     Redux["Redux dispatches"] --> Timeline
     Network["Network requests"] --> Timeline
     VisibleUpdate["Visible-update marker<br/>(planned)"] -.-> Timeline
-    ReactCommit["React commits<br/>(planned)"] -.-> Timeline
+    ReactCommit["React commits"] --> Timeline
     JSStall["JS stalls"] --> Timeline
     FrameTiming["Android frame timing<br/>(planned)"] -.-> Timeline
     Bookmarks["QA bookmarks<br/>(planned)"] -.-> Timeline
