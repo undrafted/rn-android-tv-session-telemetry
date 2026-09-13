@@ -3,7 +3,7 @@
  */
 
 import { SessionTelemetry } from '@rn-session-telemetry/react-native';
-import { runOverheadBenchmark } from '../benchmark';
+import { median, runOverheadBenchmark } from '../benchmark';
 
 // A full replacement, not `{ ...jest.requireActual('react-native'), TVEventHandler: ... }` -
 // requireActual eagerly loads FlatList's real TurboModule chain (DevMenu), which throws outside
@@ -14,9 +14,11 @@ import { runOverheadBenchmark } from '../benchmark';
 // (it's a react-native-tvos extension, not standard RN).
 jest.mock('react-native', () => ({
   TVEventHandler: { addListener: jest.fn(() => ({ remove: jest.fn() })) },
-  NativeEventEmitter: jest.fn().mockImplementation(function NativeEventEmitter() {
-    return { addListener: jest.fn(() => ({ remove: jest.fn() })) };
-  }),
+  NativeEventEmitter: jest
+    .fn()
+    .mockImplementation(function NativeEventEmitter() {
+      return { addListener: jest.fn(() => ({ remove: jest.fn() })) };
+    }),
   NativeModules: {},
   // install() reads this (index.ts's emitSessionMetadata) on every call - mirrors a realistic
   // Android shape, same as packages/react-native's own Vitest suite.
@@ -27,29 +29,75 @@ jest.mock('react-native', () => ({
   },
 }));
 
-test('runs the requested number of iterations in both phases', () => {
-  const result = runOverheadBenchmark(50);
-
-  expect(result.iterations).toBe(50);
-  expect(result.inactiveTotalMs).toBeGreaterThanOrEqual(0);
-  expect(result.activeTotalMs).toBeGreaterThanOrEqual(0);
-  expect(Number.isFinite(result.inactiveAvgMs)).toBe(true);
-  expect(Number.isFinite(result.activeAvgMs)).toBe(true);
-  expect(result.overheadPerCallMs).toBe(result.activeAvgMs - result.inactiveAvgMs);
+beforeEach(() => jest.useFakeTimers());
+afterEach(() => {
+  SessionTelemetry.stop();
+  jest.useRealTimers();
 });
 
-test('leaves the library stopped afterward, not still installed', () => {
-  runOverheadBenchmark(10);
-  const bufferedBefore = SessionTelemetry.getBufferedEvents().length;
+const options = {
+  rounds: 2,
+  iterations: 3,
+  requests: 2,
+  renders: 2,
+  idleMs: 10,
+};
 
-  // mark() is a no-op once stopped - a later call shouldn't grow the buffer at all.
-  SessionTelemetry.mark('after-benchmark');
-
-  expect(SessionTelemetry.getBufferedEvents().length).toBe(bufferedBefore);
+test('alternates phases, retains raw pairs and exercises asynchronous workloads', async () => {
+  const render = jest.fn(async () => {});
+  const request = jest.fn(async () => {});
+  const pending = runOverheadBenchmark({ render, request }, options);
+  await jest.runAllTimersAsync();
+  const result = await pending;
+  expect(result.results).toHaveLength(8);
+  for (const entry of result.results) {
+    expect(entry.samples.map(s => s.active)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    const active = entry.samples.filter(s => s.active);
+    const stopped = entry.samples.filter(s => !s.active);
+    expect(entry.medianPairedDeltaMs).toBe(
+      median(
+        active.map((s, i) => s.perOperationMs - stopped[i].perOperationMs),
+      ),
+    );
+  }
+  const marks = result.results.find(row => row.name === 'mark')!;
+  expect(
+    marks.samples.map(s => s.eventCounts['interaction-marker'] ?? 0),
+  ).toEqual([0, 3, 3, 0]);
+  expect(request).toHaveBeenCalledTimes(12);
+  expect(render).toHaveBeenCalledTimes(12);
+  const before = SessionTelemetry.getBufferedEvents().length;
+  SessionTelemetry.mark('after');
+  expect(SessionTelemetry.getBufferedEvents()).toHaveLength(before);
+  expect(jest.getTimerCount()).toBe(0);
 });
 
-test('defaults to 5000 iterations when none is given', () => {
-  const result = runOverheadBenchmark();
+test('failure stops recording and rejects instead of returning a success result', async () => {
+  const pending = runOverheadBenchmark(
+    {
+      render: async () => {},
+      request: async () => {
+        throw new Error('offline');
+      },
+    },
+    options,
+  );
+  const failure = pending.catch(error => error);
+  await jest.runAllTimersAsync();
+  expect(await failure).toEqual(new Error('offline'));
+  const before = SessionTelemetry.getBufferedEvents().length;
+  SessionTelemetry.mark('after');
+  expect(SessionTelemetry.getBufferedEvents()).toHaveLength(before);
+  expect(jest.getTimerCount()).toBe(0);
+});
 
-  expect(result.iterations).toBe(5_000);
+test('rejects invalid iteration counts before running workloads', async () => {
+  await expect(
+    runOverheadBenchmark({ render: async () => {} }, { iterations: 0 }),
+  ).rejects.toThrow('Invalid benchmark');
 });
