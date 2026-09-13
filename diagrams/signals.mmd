@@ -9,7 +9,7 @@ flowchart TD
     Redux["Redux dispatches<br/>via createTelemetryMiddleware"] --> Timeline
     Selector["Redux selector invocations<br/>via telemetrySelector() wrapper<br/>(transparent passthrough)"] --> Timeline
     Network["Network requests<br/>automatic at install(): RN fetch + XHR clients<br/>shared XHR boundary, metadata only"] --> Timeline
-    JSStall["JS stalls<br/>via startStallMonitor, a timer-<br/>overshoot heuristic (not wired<br/>into the fixture app)"] --> Timeline
+    JSStall["JS stalls<br/>automatic at install(): one bounded timer<br/>monotonic overshoot heuristic<br/>50ms interval / threshold by default"] --> Timeline
     ReactCommit["React commits<br/>via &lt;Profiler onRender&gt;<br/>(wired, but never observed on a real<br/>device yet — Profiler onRender doesn't<br/>appear to fire in a profiling build)"] --> Timeline
     FrameTiming["Android frame timing<br/>via native FrameMetrics listener"] --> Timeline
 

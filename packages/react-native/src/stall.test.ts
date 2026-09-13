@@ -6,7 +6,7 @@ vi.mock('./index.js', () => ({
   SessionTelemetry: { recordJsStall: recordJsStallMock },
 }));
 
-const { startStallMonitor } = await import('./stall.js');
+const { startStallMonitor, stopStallMonitor } = await import('./stall.js');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -14,6 +14,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stopStallMonitor();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 

@@ -1,3 +1,4 @@
+import { startStallMonitor, stopStallMonitor, type StallMonitorOptions } from './stall.js';
 import { startNetworkCapture, type NormalizeUrlOptions } from './network.js';
 import { Platform, TVEventHandler, type EventSubscription, type HWEvent } from 'react-native';
 import { createSequenceCounter, monotonicNowMs } from './clock.js';
@@ -30,6 +31,8 @@ export { onProfilerRender } from './profiler.js';
 export { startFrameTimingMonitor, type FrameTimingMonitorOptions } from './frameTiming.js';
 
 export interface InstallOptions {
+  // Automatic bounded event-loop lateness sampling; no separate startup helper required.
+  stall?: StallMonitorOptions;
   // Automatic capture of RN fetch and XHR-backed requests; no bodies or headers are stored.
   network?: NormalizeUrlOptions;
   // Once the buffer reaches this size, the oldest event is dropped for each new one recorded
@@ -183,6 +186,7 @@ function handleHardwareEvent(event: HWEvent): void {
 }
 
 function install(options?: InstallOptions): void {
+  stopStallMonitor();
   stopNetworkCapture?.();
   subscription?.remove();
   nativeSessionOpenedUnsubscribe?.();
@@ -215,10 +219,12 @@ function install(options?: InstallOptions): void {
   startNativeSession();
   emitSessionMetadata(options);
   stopNetworkCapture = startNetworkCapture(recordNetworkRequest, options?.network);
+  startStallMonitor(options?.stall);
 }
 
 function stop(): void {
   installed = false;
+  stopStallMonitor();
   stopNetworkCapture?.();
   stopNetworkCapture = undefined;
   subscription?.remove();

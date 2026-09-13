@@ -5,6 +5,7 @@ flowchart LR
         App["TV app<br/>react-native-tvos"]
         Lib["Telemetry library<br/>+ Redux middleware & selector wrapper"]
         Network["Automatic network capture<br/>RN fetch + XHR clients<br/>redacted metadata only"]
+        Stalls["Automatic JS stall sampler<br/>one timer, monotonic lateness"]
         Buffer["Event buffer"]
         FrameTiming["Native frame timing<br/>FrameMetrics"]
         GlobalFocus["Native global focus listener<br/>ViewTreeObserver + nativeID"]
@@ -12,6 +13,7 @@ flowchart LR
         Writer["On-device session writer<br/>.rnst chunks (JNI)"]
         App --> Lib
         App --> Network --> Lib
+        Stalls --> Lib
         FrameTiming --> Lib
         GlobalFocus --> Lib
         Lib --> Buffer

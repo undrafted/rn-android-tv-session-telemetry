@@ -8,13 +8,15 @@
  * `Pressable` with `nativeID` is all that's needed (see index.js's startGlobalFocusMonitor()) —
  * no telemetry-specific wrapper component or onFocus/onBlur handler required. Also wired to a
  * minimal Redux store (store.ts) demonstrating selector instrumentation. Later grows into a
- * deliberately inefficient demonstration app.
+ * deliberately inefficient demonstration app. A second row compares synchronous JS blocking
+ * with an asynchronous wait of the same duration, without telemetry calls in either action.
  *
  * @format
  */
 
 import { Profiler, useState } from 'react';
 import { loadNetworkScenario } from './networkScenario';
+import { runStallScenario } from './stallScenario';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   SessionTelemetry,
@@ -75,12 +77,40 @@ function Card({
   );
 }
 
+function StallCard({ blocking }: { blocking: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [status, setStatus] = useState('Select to run');
+  return (
+    <Pressable
+      nativeID={blocking ? 'stall-blocked' : 'stall-yielding'}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPress={() => {
+        setStatus('Running…');
+        runStallScenario(blocking).then(() => setStatus('Complete'));
+      }}
+      style={[styles.card, focused && styles.cardFocused]}
+    >
+      <Text style={styles.label}>
+        {blocking ? 'Block JS · 250ms' : 'Yield JS · 250ms'}
+      </Text>
+      <Text style={styles.detail}>{status}</Text>
+    </Pressable>
+  );
+}
+
 function App() {
   return (
     <Profiler id="App" onRender={onProfilerRender}>
       <View style={styles.container}>
-        <Card id="card-1" label="Load twice" hasTVPreferredFocus />
-        <Card id="card-2" label="Load once" />
+        <View style={styles.row}>
+          <Card id="card-1" label="Load twice" hasTVPreferredFocus />
+          <Card id="card-2" label="Load once" />
+        </View>
+        <View style={styles.row}>
+          <StallCard blocking />
+          <StallCard blocking={false} />
+        </View>
       </View>
     </Profiler>
   );
@@ -89,11 +119,15 @@ function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 24,
     backgroundColor: '#0b0b0f',
+  },
+  row: {
+    flexDirection: 'row',
+    gap: 24,
   },
   card: {
     width: 240,
