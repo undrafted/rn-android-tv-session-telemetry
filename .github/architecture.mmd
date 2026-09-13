@@ -8,9 +8,10 @@ flowchart LR
         FrameTiming["Native frame timing<br/>FrameMetrics"]
         Collector["Android collector<br/>lifecycle · clock sync<br/>(planned)"]
         Writer["On-device session writer<br/>.rnst chunks (JNI)"]
-        App --> Lib --> Buffer
-        FrameTiming --> Buffer
-        Buffer -->|native bridge| Writer
+        App --> Lib
+        FrameTiming --> Lib
+        Lib --> Buffer
+        Lib -->|native bridge| Writer
         Collector -.-> Writer
     end
 
@@ -19,7 +20,7 @@ flowchart LR
         Discover["Device discovery"]
         LiveRoute["Live route<br/>(planned)"]
         Pull["Pull + verify<br/>(run-as + checksum)"]
-        Retain["Session retention"]
+        Retain["Session retention<br/>(planned)"]
         Discover -.-> LiveRoute
         Discover --> Pull
         Pull -.-> Retain

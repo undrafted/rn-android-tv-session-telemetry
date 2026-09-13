@@ -308,7 +308,7 @@ fn run_report(session: &str, open: bool) {
     }
 
     let html_path = format!("{session}.html");
-    let html = render_html(&summary, &findings);
+    let html = render_html(&summary, &findings, &chunk.events);
     if let Err(err) = std::fs::write(&html_path, html) {
         eprintln!("could not write HTML report to {html_path}: {err}");
         exit(1);
