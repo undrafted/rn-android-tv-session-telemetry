@@ -3,7 +3,7 @@ flowchart LR
     subgraph Device["Android TV device"]
         direction TB
         App["TV app<br/>react-native-tvos"]
-        Lib["Telemetry library<br/>+ Redux middleware"]
+        Lib["Telemetry library<br/>+ Redux middleware & selector wrapper"]
         Buffer["Event buffer"]
         FrameTiming["Native frame timing<br/>FrameMetrics"]
         Collector["Android collector<br/>lifecycle<br/>(planned)"]
@@ -31,7 +31,7 @@ flowchart LR
         CLI["CLI<br/>doctor · devices · analyze · report<br/>record --package · stop · mark · status · watch · pull"]
         Protocol["Protocol<br/>event schema"]
         SessionCrate["Session<br/>chunking · rotation · budget · checksums"]
-        Analysis["Analysis<br/>clock mapping · windows · detectors · QA bookmarks"]
+        Analysis["Analysis<br/>clock mapping · windows · detectors · selector stats · QA bookmarks"]
         Report["Report<br/>JSON + HTML"]
         CLI --> Protocol --> SessionCrate --> Analysis --> Report
     end

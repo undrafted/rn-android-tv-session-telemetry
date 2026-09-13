@@ -1,19 +1,23 @@
 %%{init: {"theme": "neutral"}}%%
+%% Full per-signal detail (capture mechanism, which detector consumes it, exact thresholds):
+%% see ../docs/measurement-semantics.md
 flowchart TD
-    RemoteInput["Remote input"] --> Timeline["Synchronized timeline"]
-    Focus["Focus changes"] --> Timeline
-    InteractionMarker["Interaction markers"] --> Timeline
-    Redux["Redux dispatches"] --> Timeline
-    Network["Network requests"] --> Timeline
-    VisibleUpdate["Visible-update marker"] --> Timeline
-    ReactCommit["React commits<br/>(wired, but never observed on a real<br/>device yet — React's Profiler onRender<br/>doesn't appear to fire in a profiling build)"] --> Timeline
-    Selector["Redux selector invocations"] --> Timeline
-    JSStall["JS stalls"] --> Timeline
-    FrameTiming["Android frame timing"] --> Timeline
-    ClockSync["Clock-sync samples"] --> Timeline
-    Bookmarks["QA bookmarks"] --> Timeline
+    RemoteInput["Remote input<br/>via TVEventHandler"] --> Timeline["Synchronized timeline"]
+    Focus["Focus changes<br/>via recordFocus() (FocusableView)"] --> Timeline
+    VisibleUpdate["Visible-update marker<br/>via recordVisibleUpdate(), one<br/>requestAnimationFrame after focus<br/>(best-effort, not frame-accurate)"] --> Timeline
+    InteractionMarker["Interaction markers<br/>via mark() (explicit app call)"] --> Timeline
+    Redux["Redux dispatches<br/>via createTelemetryMiddleware"] --> Timeline
+    Selector["Redux selector invocations<br/>via telemetrySelector() wrapper<br/>(transparent passthrough)"] --> Timeline
+    Network["Network requests<br/>via createInstrumentedFetch<br/>(not wired into the fixture app)"] --> Timeline
+    JSStall["JS stalls<br/>via startStallMonitor, a timer-<br/>overshoot heuristic (not wired<br/>into the fixture app)"] --> Timeline
+    ReactCommit["React commits<br/>via &lt;Profiler onRender&gt;<br/>(wired, but never observed on a real<br/>device yet — Profiler onRender doesn't<br/>appear to fire in a profiling build)"] --> Timeline
+    FrameTiming["Android frame timing<br/>via native FrameMetrics listener"] --> Timeline
+
+    ClockSync["Clock-sync samples<br/>periodic, piggybacked on other<br/>event pushes (~30s) + once at install()"] --> ClockMapping["Clock mapping (ClockMap)<br/>fits offset + scale from samples"]
+    ClockMapping --> ReportOut
+    Bookmarks["QA bookmarks<br/>workstation-side session-telemetry mark,<br/>mapped onto the session timeline<br/>via clock mapping"] --> ReportOut
+    SessionMeta["Session metadata<br/>device info, once at install()"] --> ReportOut
     LossCount["Loss counter<br/>(real, always 0 — no detection wired up yet)"] --> Summary
-    SessionMeta["Session metadata<br/>device info"] --> Summary
 
     Timeline --> Windows["Interaction windows"]
     Timeline --> Summary["Session summary"]
