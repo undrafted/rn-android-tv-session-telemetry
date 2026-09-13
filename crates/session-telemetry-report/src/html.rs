@@ -45,6 +45,10 @@ fn render_summary(summary: &SessionSummary) -> String {
          <dt>Focus changes</dt><dd>{}</dd>\n\
          <dt>Interaction markers</dt><dd>{}</dd>\n\
          <dt>Redux dispatches</dt><dd>{}</dd>\n\
+         <dt>Network requests</dt><dd>{}</dd>\n\
+         <dt>JS stalls</dt><dd>{}</dd>\n\
+         <dt>React commits</dt><dd>{}</dd>\n\
+         <dt>Delayed frames</dt><dd>{}</dd>\n\
          <dt>Duration</dt><dd>{duration}</dd>\n\
          </dl>",
         summary.event_count,
@@ -52,6 +56,10 @@ fn render_summary(summary: &SessionSummary) -> String {
         summary.focus_count,
         summary.interaction_marker_count,
         summary.redux_dispatch_count,
+        summary.network_count,
+        summary.js_stall_count,
+        summary.react_commit_count,
+        summary.frame_timing_count,
     )
 }
 
@@ -109,7 +117,7 @@ const CSS: &str = "
 #[cfg(test)]
 mod tests {
     use super::*;
-    use session_telemetry_protocol::{Event, FocusEvent, RemoteInputEvent};
+    use session_telemetry_protocol::{Event, FocusEvent, FrameTimingEvent, RemoteInputEvent};
 
     #[test]
     fn renders_summary_numbers() {
@@ -132,6 +140,23 @@ mod tests {
 
         assert!(html.contains("<dt>Events</dt><dd>2</dd>"));
         assert!(html.contains("<dt>Duration</dt><dd>214 ms</dd>"));
+    }
+
+    #[test]
+    fn renders_the_newer_signal_counts() {
+        let events = vec![Event::FrameTiming(FrameTimingEvent {
+            sequence: 0,
+            timestamp: 0.0,
+            duration_ms: 48.2,
+        })];
+        let summary = SessionSummary::from_events(&events);
+
+        let html = render_html(&summary, &[]);
+
+        assert!(html.contains("<dt>Delayed frames</dt><dd>1</dd>"));
+        assert!(html.contains("<dt>Network requests</dt><dd>0</dd>"));
+        assert!(html.contains("<dt>JS stalls</dt><dd>0</dd>"));
+        assert!(html.contains("<dt>React commits</dt><dd>0</dd>"));
     }
 
     #[test]
