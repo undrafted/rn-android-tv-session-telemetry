@@ -29,12 +29,15 @@ pub fn render_html(
 <h1>Findings</h1>
 {findings_html}
 {bookmarks_html}
+{timeline_html}
+<script>{TIMELINE_FILTER_JS}</script>
 </body>
 </html>
 "#,
         summary_html = render_summary(summary),
         findings_html = render_findings(findings, events),
         bookmarks_html = render_bookmarks(bookmarks),
+        timeline_html = render_timeline(events),
     )
 }
 
@@ -102,15 +105,15 @@ fn render_finding_rows(finding: &Finding, events: &[Event]) -> String {
         "<tr class=\"{severity_class}\">\
          <td>{severity_label}</td>\
          <td>{} (v{})</td>\
-         <td>{}–{}</td>\
+         <td><a href=\"#event-{start}\">{start}–{end}</a></td>\
          <td>{} {}</td>\
          </tr>",
         finding.detector,
         finding.detector_version,
-        finding.sequence_start,
-        finding.sequence_end,
         finding.value,
         finding.unit,
+        start = finding.sequence_start,
+        end = finding.sequence_end,
     );
 
     let evidence = render_evidence_timeline(finding, events);
@@ -185,6 +188,126 @@ fn render_bookmarks(bookmarks: &[QaBookmark]) -> String {
     )
 }
 
+/// A long QA capture could otherwise produce a report with tens of thousands of timeline rows —
+/// this caps it and discloses the truncation rather than silently dropping the tail or letting
+/// the file balloon unbounded.
+const MAX_TIMELINE_EVENTS: usize = 5_000;
+
+/// `(wire type tag, checkbox label)` for every event variant, in the order the filter checkboxes
+/// render — the tag matches `describe_event`/the protocol's own `type` field exactly, so the
+/// inline filter script (`TIMELINE_FILTER_JS`) can match a checkbox to its `<li data-type>` by
+/// simple string equality.
+const EVENT_TYPE_FILTERS: &[(&str, &str)] = &[
+    ("remote-input", "Remote input"),
+    ("focus", "Focus"),
+    ("interaction-marker", "Marker"),
+    ("redux-dispatch", "Redux dispatch"),
+    ("network", "Network"),
+    ("js-stall", "JS stall"),
+    ("react-commit", "React commit"),
+    ("frame-timing", "Delayed frame"),
+    ("clock-sync", "Clock sync"),
+];
+
+fn event_type_tag(event: &Event) -> &'static str {
+    match event {
+        Event::RemoteInput(_) => "remote-input",
+        Event::Focus(_) => "focus",
+        Event::InteractionMarker(_) => "interaction-marker",
+        Event::ReduxDispatch(_) => "redux-dispatch",
+        Event::Network(_) => "network",
+        Event::JsStall(_) => "js-stall",
+        Event::ReactCommit(_) => "react-commit",
+        Event::FrameTiming(_) => "frame-timing",
+        Event::ClockSync(_) => "clock-sync",
+    }
+}
+
+/// The whole session as one chronological, filterable list — behind a closed-by-default
+/// `<details>` disclosure so a long session's report still *opens* with just the summary
+/// (plan.md success criterion #13: don't render every long-session event at once) while the
+/// complete trace stays one click away. Each finding's sequence-range link
+/// (`render_finding_rows`) jumps straight to its first event here via `#event-{sequence}`.
+/// Omitted entirely for an empty session, same as `render_bookmarks`.
+fn render_timeline(events: &[Event]) -> String {
+    if events.is_empty() {
+        return String::new();
+    }
+
+    let mut sorted: Vec<&Event> = events.iter().collect();
+    sorted.sort_by_key(|event| event.sequence());
+
+    let total = sorted.len();
+    let shown = &sorted[..total.min(MAX_TIMELINE_EVENTS)];
+    let start_timestamp = shown[0].timestamp();
+
+    let rows = shown
+        .iter()
+        .map(|event| {
+            let sequence = event.sequence();
+            let event_type = event_type_tag(event);
+            format!(
+                "<li id=\"event-{sequence}\" data-type=\"{event_type}\">\
+                 <span class=\"elapsed\">{:.0} ms</span> {}</li>",
+                event.timestamp() - start_timestamp,
+                describe_event(event)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let filters = EVENT_TYPE_FILTERS
+        .iter()
+        .map(|(event_type, label)| {
+            format!(
+                "<label><input type=\"checkbox\" class=\"timeline-filter\" \
+                 data-type=\"{event_type}\" checked> {label}</label>"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let truncation_note = if total > shown.len() {
+        format!(
+            "<p class=\"note\">Showing the first {} of {total} events.</p>",
+            shown.len()
+        )
+    } else {
+        String::new()
+    };
+
+    format!(
+        "<details class=\"timeline\">\n\
+         <summary>Session timeline ({total} events)</summary>\n\
+         <div class=\"timeline-filters\">\n{filters}\n</div>\n\
+         {truncation_note}\n\
+         <ol id=\"timeline-list\" class=\"evidence\">\n{rows}\n</ol>\n\
+         </details>"
+    )
+}
+
+/// Vanilla JS, no dependencies — the report is a single static file meant to be opened directly
+/// from disk, not served, so there's nothing to bundle. Toggles `hidden` on timeline rows based
+/// on which `.timeline-filter` checkboxes are checked; a no-op (empty `NodeList`s) on a report
+/// with no timeline.
+const TIMELINE_FILTER_JS: &str = "
+(function () {
+  var checkboxes = document.querySelectorAll('.timeline-filter');
+  function applyFilters() {
+    var active = new Set();
+    checkboxes.forEach(function (checkbox) {
+      if (checkbox.checked) { active.add(checkbox.dataset.type); }
+    });
+    document.querySelectorAll('#timeline-list > li').forEach(function (row) {
+      row.hidden = !active.has(row.dataset.type);
+    });
+  }
+  checkboxes.forEach(function (checkbox) {
+    checkbox.addEventListener('change', applyFilters);
+  });
+})();
+";
+
 /// Human-readable one-liner for one event, for the evidence timeline. Every free-form,
 /// app-controlled string here (action types, URLs, focus target ids, marker names, profiler
 /// ids) goes through `escape_html` — this is the first place this crate renders anything that
@@ -246,6 +369,14 @@ const CSS: &str = "
   tr.evidence-row td { padding: 0 0.6rem 0.75rem 0.6rem; border-bottom: 1px solid #ddd; }
   ol.evidence { margin: 0; padding-left: 1.25rem; color: #444; font-size: 0.9em; }
   ol.evidence .elapsed { display: inline-block; min-width: 4.5em; color: #777; font-variant-numeric: tabular-nums; }
+  details.timeline { margin-top: 1.5rem; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1rem; }
+  details.timeline summary { cursor: pointer; font-weight: 600; font-size: 1.3em; }
+  details.timeline[open] summary { margin-bottom: 0.75rem; }
+  .timeline-filters { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-bottom: 0.75rem; font-size: 0.85em; color: #444; }
+  .timeline-filters label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+  #timeline-list li[hidden] { display: none; }
+  #timeline-list li:target { background: #fff6d8; }
+  p.note { color: #666; font-size: 0.85em; }
 ";
 
 #[cfg(test)]
@@ -444,6 +575,79 @@ mod tests {
 
         assert!(html.contains("QA bookmarks"));
         assert!(html.contains("4200 ms</span> carousel stopped responding"));
+    }
+
+    #[test]
+    fn omits_the_timeline_when_there_are_no_events() {
+        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
+
+        assert!(!html.contains("Session timeline"));
+        assert!(!html.contains("<details"));
+    }
+
+    #[test]
+    fn renders_the_full_session_as_a_filterable_timeline() {
+        let events = vec![
+            Event::RemoteInput(RemoteInputEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                key: "right".to_string(),
+            }),
+            Event::Focus(FocusEvent {
+                sequence: 1,
+                timestamp: 214.0,
+                target_id: "card-2".to_string(),
+                previous_target_id: None,
+            }),
+        ];
+
+        let html = render_html(&SessionSummary::from_events(&events), &[], &events, &[]);
+
+        assert!(html.contains("<summary>Session timeline (2 events)</summary>"));
+        assert!(html.contains("id=\"event-0\" data-type=\"remote-input\""));
+        assert!(html.contains("id=\"event-1\" data-type=\"focus\""));
+        assert!(html.contains("class=\"timeline-filter\" data-type=\"remote-input\""));
+        assert!(html.contains("0 ms</span> Remote input: right"));
+        assert!(html.contains("214 ms</span> Focus: card-2"));
+    }
+
+    #[test]
+    fn truncates_a_pathologically_long_session_and_discloses_it() {
+        let events: Vec<Event> = (0..MAX_TIMELINE_EVENTS + 10)
+            .map(|sequence| {
+                Event::RemoteInput(RemoteInputEvent {
+                    sequence: sequence as u64,
+                    timestamp: sequence as f64,
+                    key: "right".to_string(),
+                })
+            })
+            .collect();
+
+        let html = render_timeline(&events);
+
+        assert!(html.contains(&format!(
+            "Showing the first {MAX_TIMELINE_EVENTS} of {} events.",
+            MAX_TIMELINE_EVENTS + 10
+        )));
+        assert!(html.contains(&format!("id=\"event-{}\"", MAX_TIMELINE_EVENTS - 1)));
+        assert!(!html.contains(&format!("id=\"event-{MAX_TIMELINE_EVENTS}\"")));
+    }
+
+    #[test]
+    fn links_a_findings_sequence_range_to_its_timeline_anchor() {
+        let findings = vec![Finding {
+            detector: "high-latency-focus-change",
+            detector_version: 1,
+            severity: Severity::Warning,
+            sequence_start: 3,
+            sequence_end: 7,
+            value: 214.0,
+            unit: "ms",
+        }];
+
+        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[], &[]);
+
+        assert!(html.contains("<a href=\"#event-3\">3–7</a>"));
     }
 
     #[test]
