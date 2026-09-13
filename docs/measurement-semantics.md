@@ -60,6 +60,15 @@ All signals below are exercised by the TV fixture.
 | Clock sync         | First event after `install()`, then with the next pushed event once 30 seconds have elapsed since the previous sample.                                                                                                                                                                                                                                                                                                                                                  |
 | Session metadata   | Emitted at `install()`. Device model and OS version come from RN `Platform`; app version and build type come from `InstallOptions`.                                                                                                                                                                                                                                                                                                                                     |
 
+### React summaries
+
+| Output                      | Meaning                                                                                                                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reactSummary.byProfiler`   | Session commit count, valid-duration count, total render work, and longest render, grouped by profiler ID. Nested profiler totals can overlap.                                          |
+| `reactSummary.interactions` | The same metrics for each input window, ending at the first visible update or next input. Commits outside these windows still count in profiler totals. Association is not attribution. |
+| Missing durations           | Negative and non-finite durations are excluded from work totals. Totals are null when no valid durations were recorded.                                                                 |
+| HTML                        | Shows the first 200 interaction summaries; JSON contains all of them. Elapsed render-to-commit intervals are not summed.                                                                |
+
 ### Analysis
 
 “Evidence only” means a signal can appear in a finding's event range without being used

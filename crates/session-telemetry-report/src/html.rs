@@ -22,6 +22,7 @@ pub fn render_html(report: &Report) -> String {
 <h1>Session summary</h1>
 {summary_html}
 {react_capture_html}
+{react_summary_html}
 <h1>Findings</h1>
 {findings_html}
 {selectors_html}
@@ -41,11 +42,55 @@ pub fn render_html(report: &Report) -> String {
         } else {
             "<p>React capture unavailable or not observed. Zero recorded commits is not a measurement of zero React work: profiling may be unsupported, the root may be unwrapped, or no profiled commit occurred during capture.</p>"
         },
+        react_summary_html = render_react_summary(&report.react_summary),
         findings_html = render_findings(&report.findings),
         selectors_html = render_selector_stats(&report.selector_stats),
         bookmarks_html = render_bookmarks(report.bookmarks),
         timeline_html = render_timeline(report.events),
     )
+}
+
+fn render_react_summary(summary: &crate::ReactSummary) -> String {
+    if summary.by_profiler.is_empty() {
+        return String::new();
+    }
+    fn cells(stats: &crate::ReactRenderStats) -> String {
+        let ms =
+            |value: Option<f64>| value.map_or("unavailable".to_string(), |v| format!("{v:.3} ms"));
+        format!(
+            "<td>{}</td><td>{}</td><td>{}</td><td>{}</td>",
+            stats.commit_count,
+            stats.measured_commit_count,
+            ms(stats.total_render_work_ms),
+            ms(stats.longest_render_work_ms)
+        )
+    }
+    let mut html = String::from(
+        "<h2>React render work</h2><p>Recorded callback totals; nested profilers can count the same work. Elapsed render-to-commit time is not summed. Interaction windows end at the first visible-update event or next input; association does not establish cause.</p><table><tr><th>Profiler</th><th>Commits</th><th>Valid durations</th><th>Total render work</th><th>Longest render</th></tr>",
+    );
+    for (id, stats) in &summary.by_profiler {
+        html.push_str(&format!(
+            "<tr><td>{}</td>{}</tr>",
+            escape_html(id),
+            cells(stats)
+        ));
+    }
+    html.push_str("</table><h3>React work by interaction</h3><table><tr><th>Input sequence / key</th><th>Commits</th><th>Valid durations</th><th>Total render work</th><th>Longest render</th></tr>");
+    for row in summary.interactions.iter().take(200) {
+        html.push_str(&format!(
+            "<tr><td>{} / {}</td>{}</tr>",
+            row.input_sequence,
+            escape_html(&row.input_key),
+            cells(&row.stats)
+        ));
+    }
+    html.push_str("</table>");
+    if summary.interactions.len() > 200 {
+        html.push_str(
+            "<p>Showing the first 200 interactions; JSON contains all interaction summaries.</p>",
+        );
+    }
+    html
 }
 
 fn render_summary(

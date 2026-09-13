@@ -34,6 +34,7 @@ pub struct Report<'a> {
     pub findings: Vec<FindingWithEvidence<'a>>,
     /// Per-selector aggregate stats across the whole session — see `SelectorStats`'s own doc
     /// comment. Empty when no selector was instrumented, not an error.
+    pub react_summary: crate::ReactSummary,
     pub selector_stats: Vec<SelectorStats>,
     pub bookmarks: &'a [QaBookmark],
     /// The full raw session, kept off the wire (`#[serde(skip)]`) so the JSON document stays
@@ -70,6 +71,7 @@ impl<'a> Report<'a> {
                 })
                 .collect(),
             selector_stats: selector_stats(events),
+            react_summary: crate::ReactSummary::from_events(events),
             bookmarks,
             events,
         }
@@ -263,6 +265,33 @@ mod tests {
             report.selector_stats[0].selector_id,
             "catalog/selectVisibleItemIds"
         );
+    }
+
+    #[test]
+    fn react_summary_is_shared_by_json_and_html_and_escapes_labels() {
+        let events = vec![Event::ReactCommit(
+            session_telemetry_protocol::ReactCommitEvent {
+                sequence: 0,
+                timestamp: 100.0,
+                profiler_id: "<script>".into(),
+                phase: session_telemetry_protocol::ReactCommitPhase::Mount,
+                actual_duration_ms: 2.5,
+                base_duration_ms: 99.0,
+                render_start_ms: Some(0.0),
+                commit_time_ms: Some(90.0),
+            },
+        )];
+        let summary = SessionSummary::from_events(&events);
+        let report = Report::new(&summary, &[], &events, &[], None);
+        let json: serde_json::Value = serde_json::from_str(&report.to_json().unwrap()).unwrap();
+        assert_eq!(
+            json["reactSummary"]["byProfiler"]["<script>"]["totalRenderWorkMs"],
+            2.5
+        );
+        let html = crate::render_html(&report);
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("2.500 ms"));
+        assert!(html.contains("nested profilers can count the same work"));
     }
 
     #[test]

@@ -173,7 +173,7 @@ pub fn detect_high_latency_visible_updates(windows: &[InteractionWindow]) -> Vec
                         value: CRITICAL_THRESHOLD_MS,
                     },
                 ],
-                summary: format!("Input-to-visible-update latency was {latency_ms:.0}ms."),
+                summary: format!("The visible-update callback was recorded {latency_ms:.0}ms after input. This is not a frame-presentation timestamp."),
             })
         })
         .collect()
@@ -267,7 +267,7 @@ pub fn detect_js_stalls_overlapping_interactions(windows: &[InteractionWindow]) 
                     value: CRITICAL_THRESHOLD_MS,
                 }],
                 summary: format!(
-                    "A {:.0}ms JavaScript stall overlapped this interaction.",
+                    "A timer overshoot of {:.0}ms was recorded in this interaction. The sample does not identify the blocking code or distinguish scheduling, GC, or suspension.",
                     stall.duration_ms
                 ),
             });
@@ -337,7 +337,7 @@ pub fn detect_repeated_network_requests(windows: &[InteractionWindow]) -> Vec<Fi
                     },
                 ],
                 summary: format!(
-                    "The same network request was made {count} times within one interaction."
+                    "{count} requests with the same recorded method and normalized URL completed within one interaction. Redacted URLs can group different requests; repetition alone does not establish redundant work."
                 ),
             });
         }
@@ -410,10 +410,8 @@ pub fn detect_react_commits_overlapping_delayed_frames(
     findings
 }
 
-/// Flags a network request immediately followed (the very next event recorded in this
-/// interaction window) by a React commit — synchronous JS work reacting to the response and
-/// triggering a re-render, rather than an unrelated commit that just happened to land somewhere
-/// later in the same window.
+/// Compares adjacent network and commit events in the interaction activity list.
+/// Focus events are stored separately. Event order does not establish a causal link.
 pub fn detect_network_completions_followed_by_commits(
     windows: &[InteractionWindow],
 ) -> Vec<Finding> {
@@ -445,7 +443,7 @@ pub fn detect_network_completions_followed_by_commits(
                 unit: "ms",
                 thresholds: Vec::new(),
                 summary: format!(
-                    "A network completion was immediately followed by a React commit {delay_ms:.0}ms later."
+                    "A React commit callback was recorded {delay_ms:.0}ms after a network completion in this interaction. This does not establish that the request caused the render."
                 ),
             });
         }
@@ -514,7 +512,7 @@ pub fn detect_excessive_commits_during_rapid_focus_movement(
                         },
                     ],
                     summary: format!(
-                        "{count} React commits occurred during a burst of rapid focus movement."
+                        "{count} React commit callbacks were recorded during a burst of rapid focus movement. Count alone does not measure render cost."
                     ),
                 });
             }
@@ -573,7 +571,7 @@ pub fn detect_repeated_selector_recomputation(windows: &[InteractionWindow]) -> 
                     value: REPEAT_THRESHOLD as f64,
                 }],
                 summary: format!(
-                    "An instrumented selector was invoked {count} times with unchanged inputs within one interaction."
+                    "An instrumented selector was called {count} times with unchanged input references within one interaction. Calls do not establish that a memoized selector recomputed its result."
                 ),
             });
         }
@@ -630,7 +628,7 @@ pub fn detect_unstable_selector_references(windows: &[InteractionWindow]) -> Vec
                     value: COMMIT_THRESHOLD as f64,
                 }],
                 summary: format!(
-                    "Selector \"{}\" returned a new reference with unchanged inputs, overlapping {commit_count} React commits.",
+                    "Selector \"{}\" returned a new reference with unchanged input references in an interaction containing {commit_count} React commit callbacks. This does not establish that the selector caused those renders.",
                     selector.selector_id
                 ),
             });
@@ -1109,6 +1107,8 @@ mod tests {
         let findings = detect_network_completions_followed_by_commits(&[window]);
 
         assert_eq!(findings.len(), 1);
+        assert!(findings[0].summary.contains("callback was recorded"));
+        assert!(findings[0].summary.contains("does not establish"));
         assert_eq!(
             findings[0].detector,
             NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR

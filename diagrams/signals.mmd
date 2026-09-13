@@ -21,6 +21,9 @@ flowchart TD
 
     Timeline --> Windows["Interaction windows"]
     Timeline --> Summary["Session summary"]
+    Windows --> ReactSummary["React summaries<br/>commit counts + total / longest render work<br/>per interaction and profiler"]
+    Timeline --> ReactSummary
+    ReactSummary --> ReportOut
     Windows --> Detectors["Detectors"]
     Detectors --> Findings["Findings"]
     Findings --> ReportOut["HTML / JSON report"]

@@ -55,6 +55,19 @@
       ]
     }
   ],
+  "reactSummary": {
+    "byProfiler": {},
+    "interactions": [
+      {
+        "inputSequence": 0,
+        "inputKey": "right",
+        "commitCount": 0,
+        "measuredCommitCount": 0,
+        "totalRenderWorkMs": null,
+        "longestRenderWorkMs": null
+      }
+    ]
+  },
   "selectorStats": [],
   "bookmarks": [
     {
