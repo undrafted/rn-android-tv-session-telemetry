@@ -1,5 +1,6 @@
 package com.rnsessiontelemetry.reactnative
 
+import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -30,11 +31,16 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
               dir.absolutePath,
               maxChunkBytes = DEFAULT_MAX_CHUNK_BYTES,
               maxChunkDurationMs = DEFAULT_MAX_CHUNK_DURATION_MS,
-              budgetBytes = NO_BUDGET,
+              budgetBytes = DEFAULT_BUDGET_BYTES,
           )
     }
     return handle
   }
+
+  // Only ever transitions Warning->error once, on the push that actually crosses the budget -
+  // RotatingChunkWriter (Rust) stays permanently stopped after that, so every push
+  // (silently) returning OUTCOME_BUDGET_EXCEEDED afterward doesn't re-log.
+  private var loggedBudgetExceeded = false
 
   @ReactMethod
   fun pushEvent(eventJson: String) {
@@ -42,7 +48,15 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
     if (currentHandle == 0L) {
       return
     }
-    NativeSessionWriter.nativePushEvent(currentHandle, eventJson)
+    val outcome = NativeSessionWriter.nativePushEvent(currentHandle, eventJson)
+    if (outcome == NativeSessionWriter.OUTCOME_BUDGET_EXCEEDED && !loggedBudgetExceeded) {
+      loggedBudgetExceeded = true
+      Log.w(
+          NAME,
+          "On-device session storage budget ($DEFAULT_BUDGET_BYTES bytes) exceeded - " +
+              "recording stopped cleanly; events captured before this point remain intact.",
+      )
+    }
   }
 
   // Exposed for verification/pull tooling to locate this session's chunk files without
@@ -69,7 +83,11 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
     const val DEFAULT_MAX_CHUNK_BYTES = 256L * 1024
     const val DEFAULT_MAX_CHUNK_DURATION_MS = 60_000.0
 
-    // No total-storage budget yet - real device-storage budgeting is separate, upcoming work.
-    const val NO_BUDGET = 0L
+    // A placeholder pending real device measurements, not a value anyone has actually
+    // measured against real TV storage constraints - same caveat as every detector threshold
+    // in session-telemetry-analysis. Caps total encoded size across the whole session (sealed
+    // chunks and the in-progress one combined - see RotatingChunkWriter::with_budget), so a
+    // multi-hour QA capture can't silently fill the device's storage.
+    const val DEFAULT_BUDGET_BYTES = 200L * 1024 * 1024
   }
 }
