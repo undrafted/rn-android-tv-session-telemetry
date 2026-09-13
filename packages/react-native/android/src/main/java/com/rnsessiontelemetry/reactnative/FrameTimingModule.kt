@@ -40,6 +40,15 @@ class FrameTimingModule(reactContext: ReactApplicationContext) :
     handlerThread = null
   }
 
+  // NativeEventEmitter (frameTiming.ts) requires these on any native module it wraps, even
+  // though events are emitted directly via RCTDeviceEventEmitter above rather than through this
+  // module's own add/remove-listener bookkeeping - without them it logs a warning on every use.
+  @ReactMethod
+  fun addListener(eventName: String) {}
+
+  @ReactMethod
+  fun removeListeners(count: Int) {}
+
   // Called on the HandlerThread passed to addOnFrameMetricsAvailableListener, not the UI thread.
   override fun onFrameMetricsAvailable(
       window: Window,

@@ -7,11 +7,14 @@ const { addListenerMock, removeMock } = vi.hoisted(() => ({
 }));
 
 // TVEventHandler needs a native bridge that doesn't exist outside a real RN runtime, so
-// 'react-native' is mocked directly rather than pulling in RN's Jest preset here.
+// 'react-native' is mocked directly rather than pulling in RN's Jest preset here. NativeModules
+// is empty (no RNSessionTelemetryWriter) so every pushEvent() exercises transferEventToNative's
+// no-native-module path, same as a real JS-only test host would.
 vi.mock('react-native', () => ({
   TVEventHandler: {
     addListener: addListenerMock,
   },
+  NativeModules: {},
 }));
 
 function emitHardwareEvent(eventType: string): void {

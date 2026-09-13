@@ -3,7 +3,7 @@
  */
 
 import { AppRegistry } from 'react-native';
-import { SessionTelemetry } from '@rn-session-telemetry/react-native';
+import { SessionTelemetry, startFrameTimingMonitor } from '@rn-session-telemetry/react-native';
 import App from './App';
 import { name as appName } from './app.json';
 
@@ -16,6 +16,7 @@ if (typeof global.window === 'undefined') {
 
 if (__RN_SESSION_TELEMETRY_ENABLED__) {
   SessionTelemetry.install();
+  startFrameTimingMonitor();
 }
 
 AppRegistry.registerComponent(appName, () => App);

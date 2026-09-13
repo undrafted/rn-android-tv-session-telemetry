@@ -10,6 +10,7 @@ const { addListenerMock } = vi.hoisted(() => ({
 vi.mock('react-native', () => ({
   TVEventHandler: { addListener: addListenerMock },
   Pressable: 'Pressable',
+  NativeModules: {},
 }));
 
 const { FocusableView } = await import('./FocusableView.js');

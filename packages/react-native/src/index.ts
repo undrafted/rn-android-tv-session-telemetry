@@ -1,6 +1,7 @@
 import { TVEventHandler, type EventSubscription, type HWEvent } from 'react-native';
 import { createSequenceCounter, monotonicNowMs } from './clock.js';
 import { isRemoteInputEventType, type SessionTelemetryEvent } from './events.js';
+import { transferEventToNative } from './nativeTransfer.js';
 
 export type {
   SessionTelemetryEvent,
@@ -77,6 +78,9 @@ function pushEvent(event: SessionTelemetryEvent): void {
     droppedEventCount += 1;
   }
   buffer.push(event);
+  // Transferred unconditionally, independent of the sliding window above - the whole point of
+  // the native/on-device writer is durability past what the bounded JS buffer keeps in memory.
+  transferEventToNative(event);
 }
 
 function handleHardwareEvent(event: HWEvent): void {

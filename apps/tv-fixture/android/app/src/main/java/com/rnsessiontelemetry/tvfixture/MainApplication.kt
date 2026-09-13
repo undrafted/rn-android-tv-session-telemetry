@@ -7,6 +7,7 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.rnsessiontelemetry.reactnative.FrameTimingPackage
+import com.rnsessiontelemetry.reactnative.SessionWriterPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -19,6 +20,7 @@ class MainApplication : Application(), ReactApplication {
           // own guidance - a legacy (non-Turbo) NativeModule package, kept simple since this is
           // a first native prototype (public hooks only, no Codegen).
           add(FrameTimingPackage())
+          add(SessionWriterPackage())
         },
     )
   }
