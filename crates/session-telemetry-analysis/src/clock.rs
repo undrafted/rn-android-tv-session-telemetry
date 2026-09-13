@@ -1,3 +1,5 @@
+use session_telemetry_protocol::Event;
+
 /// A (source_clock, reference_clock) pair captured near the same real moment. Both are
 /// monotonic milliseconds from their own clock domain (e.g. the JS engine's `performance.now()`
 /// vs. the Android collector's clock); neither is wall-clock time.
@@ -5,6 +7,25 @@
 pub struct ClockSyncSample {
     pub source: f64,
     pub reference: f64,
+}
+
+/// Extracts clock-sync samples from a decoded session's events, in the (source, reference)
+/// shape `ClockMap::from_samples` expects for mapping a QA bookmark's wall-clock reading onto
+/// this session's own monotonic timeline: `source` is the event's `wallClockUnixMs` (the
+/// device's own wall clock — the same domain a workstation's `session-telemetry mark` timestamp
+/// is assumed to share, see `bookmark.rs`), `reference` is its `timestamp` (this session's
+/// monotonic domain, same as every other event's `timestamp`).
+pub fn clock_sync_samples_from_events(events: &[Event]) -> Vec<ClockSyncSample> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            Event::ClockSync(sample) => Some(ClockSyncSample {
+                source: sample.wall_clock_unix_ms,
+                reference: sample.timestamp,
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Maps timestamps from one monotonic clock domain onto another, fitted from sync samples.
@@ -74,6 +95,7 @@ impl ClockMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use session_telemetry_protocol::{ClockSyncEvent, Event, RemoteInputEvent};
 
     #[test]
     fn zero_samples_yields_no_map() {
@@ -164,5 +186,31 @@ mod tests {
         let map = ClockMap::from_samples(&samples).unwrap();
 
         assert!(map.map(42.0).is_finite());
+    }
+
+    #[test]
+    fn extracts_clock_sync_samples_and_ignores_other_event_types() {
+        let events = vec![
+            Event::RemoteInput(RemoteInputEvent {
+                sequence: 0,
+                timestamp: 0.0,
+                key: "right".to_string(),
+            }),
+            Event::ClockSync(ClockSyncEvent {
+                sequence: 1,
+                timestamp: 50.0,
+                wall_clock_unix_ms: 1_700_000_000_000.0,
+            }),
+        ];
+
+        let samples = clock_sync_samples_from_events(&events);
+
+        assert_eq!(
+            samples,
+            vec![ClockSyncSample {
+                source: 1_700_000_000_000.0,
+                reference: 50.0,
+            }]
+        );
     }
 }

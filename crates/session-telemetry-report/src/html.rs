@@ -1,14 +1,20 @@
 use crate::summary::SessionSummary;
-use session_telemetry_analysis::{Finding, Severity};
+use session_telemetry_analysis::{Finding, QaBookmark, Severity};
 use session_telemetry_protocol::{Event, ReactCommitPhase};
 
-/// Renders a static HTML report from a session summary, its findings, and the session's raw
-/// events. A long session's report must open with a summary, not attempt to render every event
-/// at once — consistent with that, the events are only ever used to render each finding's own
-/// evidence timeline (the events between its `sequence_start`/`sequence_end`), never dumped in
-/// full. A finding's window is inherently bounded (one remote-input interaction), so this stays
-/// bounded regardless of how long the overall session was.
-pub fn render_html(summary: &SessionSummary, findings: &[Finding], events: &[Event]) -> String {
+/// Renders a static HTML report from a session summary, its findings, the session's raw events,
+/// and any QA bookmarks mapped onto the session timeline. A long session's report must open
+/// with a summary, not attempt to render every event at once — consistent with that, the events
+/// are only ever used to render each finding's own evidence timeline (the events between its
+/// `sequence_start`/`sequence_end`), never dumped in full. A finding's window is inherently
+/// bounded (one remote-input interaction), so this stays bounded regardless of how long the
+/// overall session was.
+pub fn render_html(
+    summary: &SessionSummary,
+    findings: &[Finding],
+    events: &[Event],
+    bookmarks: &[QaBookmark],
+) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -22,11 +28,13 @@ pub fn render_html(summary: &SessionSummary, findings: &[Finding], events: &[Eve
 {summary_html}
 <h1>Findings</h1>
 {findings_html}
+{bookmarks_html}
 </body>
 </html>
 "#,
         summary_html = render_summary(summary),
         findings_html = render_findings(findings, events),
+        bookmarks_html = render_bookmarks(bookmarks),
     )
 }
 
@@ -147,6 +155,36 @@ fn render_evidence_timeline(finding: &Finding, events: &[Event]) -> String {
     format!("<ol class=\"evidence\">\n{rows}\n</ol>")
 }
 
+/// QA bookmarks (`session-telemetry mark`), already mapped onto the session's monotonic
+/// timeline via `ClockMap` by the caller — this function only renders them. Omitted entirely
+/// (no heading) when there are none, same as the findings table isn't forced to exist for an
+/// empty session.
+fn render_bookmarks(bookmarks: &[QaBookmark]) -> String {
+    if bookmarks.is_empty() {
+        return String::new();
+    }
+
+    let rows = bookmarks
+        .iter()
+        .map(|bookmark| {
+            format!(
+                "<li><span class=\"elapsed\">{:.0} ms</span> {}</li>",
+                bookmark.session_timestamp,
+                escape_html(&bookmark.label)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "<h1>QA bookmarks</h1>\n\
+         <p class=\"bookmark-note\">Mapped from workstation timestamps onto the session's own \
+         timeline via on-device clock-sync samples (and, if captured, a device/workstation clock \
+         offset from record time) — treat placement as approximate, not frame-accurate.</p>\n\
+         <ol class=\"evidence\">\n{rows}\n</ol>"
+    )
+}
+
 /// Human-readable one-liner for one event, for the evidence timeline. Every free-form,
 /// app-controlled string here (action types, URLs, focus target ids, marker names, profiler
 /// ids) goes through `escape_html` — this is the first place this crate renders anything that
@@ -176,6 +214,7 @@ fn describe_event(event: &Event) -> String {
             event.actual_duration_ms
         ),
         Event::FrameTiming(event) => format!("Delayed frame ({} ms)", event.duration_ms),
+        Event::ClockSync(_) => "Clock sync sample".to_string(),
     }
 }
 
@@ -233,7 +272,7 @@ mod tests {
         ];
         let summary = SessionSummary::from_events(&events);
 
-        let html = render_html(&summary, &[], &events);
+        let html = render_html(&summary, &[], &events, &[]);
 
         assert!(html.contains("<dt>Events</dt><dd>2</dd>"));
         assert!(html.contains("<dt>Duration</dt><dd>214 ms</dd>"));
@@ -248,7 +287,7 @@ mod tests {
         })];
         let summary = SessionSummary::from_events(&events);
 
-        let html = render_html(&summary, &[], &events);
+        let html = render_html(&summary, &[], &events, &[]);
 
         assert!(html.contains("<dt>Delayed frames</dt><dd>1</dd>"));
         assert!(html.contains("<dt>Network requests</dt><dd>0</dd>"));
@@ -258,14 +297,14 @@ mod tests {
 
     #[test]
     fn reports_duration_as_na_for_an_empty_session() {
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[]);
+        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
 
         assert!(html.contains("<dt>Duration</dt><dd>n/a</dd>"));
     }
 
     #[test]
     fn renders_no_findings_message_when_empty() {
-        let html = render_html(&SessionSummary::from_events(&[]), &[], &[]);
+        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
 
         assert!(html.contains("No findings."));
         assert!(!html.contains("<table"));
@@ -283,7 +322,7 @@ mod tests {
             unit: "ms",
         }];
 
-        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[]);
+        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[], &[]);
 
         assert!(html.contains("tr class=\"warning\""));
         assert!(html.contains("high-latency-focus-change (v1)"));
@@ -321,7 +360,12 @@ mod tests {
             unit: "ms",
         }];
 
-        let html = render_html(&SessionSummary::from_events(&events), &findings, &events);
+        let html = render_html(
+            &SessionSummary::from_events(&events),
+            &findings,
+            &events,
+            &[],
+        );
 
         assert!(html.contains("ol class=\"evidence\""));
         assert!(html.contains("0 ms</span> Remote input: right"));
@@ -341,7 +385,7 @@ mod tests {
             unit: "ms",
         }];
 
-        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[]);
+        let html = render_html(&SessionSummary::from_events(&[]), &findings, &[], &[]);
 
         assert!(!html.contains("<tr class=\"evidence-row\""));
     }
@@ -370,7 +414,47 @@ mod tests {
             unit: "ms",
         }];
 
-        let html = render_html(&SessionSummary::from_events(&events), &findings, &events);
+        let html = render_html(
+            &SessionSummary::from_events(&events),
+            &findings,
+            &events,
+            &[],
+        );
+
+        assert!(!html.contains("<script>alert(1)</script>"));
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+    }
+
+    #[test]
+    fn omits_the_bookmarks_section_when_there_are_none() {
+        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &[]);
+
+        assert!(!html.contains("QA bookmarks"));
+    }
+
+    #[test]
+    fn renders_mapped_bookmarks_with_their_session_timestamp_and_label() {
+        let bookmarks = vec![QaBookmark {
+            workstation_timestamp: 1_700_000_000_500.0,
+            session_timestamp: 4_200.0,
+            label: "carousel stopped responding".to_string(),
+        }];
+
+        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &bookmarks);
+
+        assert!(html.contains("QA bookmarks"));
+        assert!(html.contains("4200 ms</span> carousel stopped responding"));
+    }
+
+    #[test]
+    fn escapes_free_form_strings_in_bookmark_labels() {
+        let bookmarks = vec![QaBookmark {
+            workstation_timestamp: 0.0,
+            session_timestamp: 0.0,
+            label: "<script>alert(1)</script>".to_string(),
+        }];
+
+        let html = render_html(&SessionSummary::from_events(&[]), &[], &[], &bookmarks);
 
         assert!(!html.contains("<script>alert(1)</script>"));
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));

@@ -10,6 +10,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.File
 
 // Receives every event the JS library records (nativeTransfer.ts), independent of the JS
@@ -112,6 +113,18 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
             budgetBytes = DEFAULT_BUDGET_BYTES,
         )
     loggedBudgetExceeded = false
+    // Tells JS a fresh native session just opened (nativeTransfer.ts's onNativeSessionOpened),
+    // so it can push an immediate clock-sync sample into *this* session even when this open was
+    // triggered by ACTION_START_SESSION (`session-telemetry record`), not by the app's own
+    // SessionTelemetry.install() - the two are independent levers by design (see this class's
+    // own doc comment), so JS has no other way to know a new native session boundary just
+    // happened. Without this, a native session that starts long after JS's own install() (and
+    // therefore long after its own one-time baseline sample) could go its entire lifetime with
+    // zero clock-sync coverage if it's shorter than the periodic sampling interval - confirmed
+    // as a real gap against a live device, not a hypothetical.
+    reactApplicationContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(EVENT_SESSION_OPENED, null)
   }
 
   private fun finishSessionLocked() {
@@ -163,8 +176,19 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
     finishSession()
   }
 
+  // NativeEventEmitter (nativeTransfer.ts's onNativeSessionOpened) requires these on any native
+  // module it wraps, even though EVENT_SESSION_OPENED is emitted directly via
+  // RCTDeviceEventEmitter above rather than through this module's own add/remove-listener
+  // bookkeeping - without them it logs a warning on every use (same as FrameTimingModule).
+  @ReactMethod
+  fun addListener(eventName: String) {}
+
+  @ReactMethod
+  fun removeListeners(count: Int) {}
+
   companion object {
     const val NAME = "RNSessionTelemetryWriter"
+    const val EVENT_SESSION_OPENED = "RNSessionTelemetryWriter.sessionOpened"
     const val DEFAULT_MAX_CHUNK_BYTES = 256L * 1024
     const val DEFAULT_MAX_CHUNK_DURATION_MS = 60_000.0
 

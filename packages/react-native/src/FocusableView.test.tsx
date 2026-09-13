@@ -25,9 +25,11 @@ describe('FocusableView', () => {
     const element = FocusableView({ id: 'card-1' });
     element.props.onFocus?.({} as never);
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([
-      expect.objectContaining({ type: 'focus', targetId: 'card-1' }),
-    ]);
+    // install()'s baseline clock-sync sample (see index.ts's maybeEmitClockSync) lands ahead of
+    // this focus event in the buffer - filtered out here since it's incidental to what this
+    // test checks.
+    const events = SessionTelemetry.getBufferedEvents().filter((event) => event.type !== 'clock-sync');
+    expect(events).toEqual([expect.objectContaining({ type: 'focus', targetId: 'card-1' })]);
   });
 
   it('still calls a caller-provided onFocus handler', () => {

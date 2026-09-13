@@ -1,7 +1,12 @@
 import { TVEventHandler, type EventSubscription, type HWEvent } from 'react-native';
 import { createSequenceCounter, monotonicNowMs } from './clock.js';
 import { isRemoteInputEventType, type SessionTelemetryEvent } from './events.js';
-import { finishNativeSession, startNativeSession, transferEventToNative } from './nativeTransfer.js';
+import {
+  finishNativeSession,
+  onNativeSessionOpened,
+  startNativeSession,
+  transferEventToNative,
+} from './nativeTransfer.js';
 
 export type {
   SessionTelemetryEvent,
@@ -59,20 +64,28 @@ export interface SessionTelemetryApi {
 
 const DEFAULT_MAX_BUFFERED_EVENTS = 10_000;
 
+// How often a clock-sync sample piggybacks on an ordinary event push (see maybeEmitClockSync
+// below), not a timer - sample density then scales with actual session activity instead of
+// costing anything when idle. 30s keeps drift-fitting (ClockMap fits offset *and* scale, see
+// session-telemetry-analysis) meaningful across a long QA session without spamming samples.
+const CLOCK_SYNC_INTERVAL_MS = 30_000;
+
 const nextSequence = createSequenceCounter();
 
 let subscription: EventSubscription | undefined;
+let nativeSessionOpenedUnsubscribe: (() => void) | undefined;
 let previousFocusTarget: string | null = null;
 let buffer: SessionTelemetryEvent[] = [];
 let maxBufferedEvents = DEFAULT_MAX_BUFFERED_EVENTS;
 let droppedEventCount = 0;
+let lastClockSyncAt: number | null = null;
 // Recording methods (mark/recordFocus/handleHardwareEvent) are real no-ops until install()
 // runs. App code calls mark()/recordFocus() unconditionally from UI handlers rather than
 // re-checking the build flag at every call site, so this is what actually keeps a disabled
 // build from silently growing the buffer forever.
 let installed = false;
 
-function pushEvent(event: SessionTelemetryEvent): void {
+function pushToBufferAndNative(event: SessionTelemetryEvent): void {
   if (buffer.length >= maxBufferedEvents) {
     buffer.shift();
     droppedEventCount += 1;
@@ -83,11 +96,45 @@ function pushEvent(event: SessionTelemetryEvent): void {
   transferEventToNative(event);
 }
 
+function emitClockSync(): void {
+  const now = monotonicNowMs();
+  lastClockSyncAt = now;
+  pushToBufferAndNative({
+    type: 'clock-sync',
+    sequence: nextSequence(),
+    timestamp: now,
+    wallClockUnixMs: Date.now(),
+  });
+}
+
+// Piggybacks a clock-sync sample on whichever real event happens to be firing, rather than a
+// setInterval - ties sample density to actual session activity (a QA engineer generating a
+// bookmark-worthy moment is, by definition, usually also generating other events) with no
+// battery cost when the session is idle. Skips emitting one for the very first push after
+// install() - lastClockSyncAt starts null specifically so that first call always samples,
+// giving every session a baseline sample even if it's short.
+//
+// Must run, as a statement, before its caller computes `sequence: nextSequence()` for its own
+// event - not folded into a shared pushEvent(event) wrapper, because a function's arguments
+// (including that nextSequence() call) evaluate before the function body runs. A wrapper would
+// let the caller's sequence number get allocated before this function's own nextSequence() call
+// even though this function's sample is pushed to the buffer first, producing a buffer whose
+// insertion order silently disagrees with its own sequence numbers.
+function maybeEmitClockSync(): void {
+  const now = monotonicNowMs();
+  if (lastClockSyncAt !== null && now - lastClockSyncAt < CLOCK_SYNC_INTERVAL_MS) {
+    return;
+  }
+  emitClockSync();
+}
+
+
 function handleHardwareEvent(event: HWEvent): void {
   if (!installed || !isRemoteInputEventType(event.eventType)) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'remote-input',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),
@@ -97,12 +144,24 @@ function handleHardwareEvent(event: HWEvent): void {
 
 function install(options?: InstallOptions): void {
   subscription?.remove();
+  nativeSessionOpenedUnsubscribe?.();
   buffer = [];
   droppedEventCount = 0;
   maxBufferedEvents = Math.max(1, options?.maxBufferedEvents ?? DEFAULT_MAX_BUFFERED_EVENTS);
   previousFocusTarget = null;
   installed = true;
+  lastClockSyncAt = null;
   subscription = TVEventHandler.addListener(handleHardwareEvent);
+  // A later `session-telemetry record` can open a *new* native session on its own (ADB
+  // broadcast, independent of this call - see this library's bidirectional design), which the
+  // baseline/periodic sampling above has no way to know about on its own. This forces a fresh
+  // sample the moment native confirms that happened, so a short broadcast-triggered session
+  // isn't left with zero clock-sync coverage for its entire lifetime - confirmed as a real gap
+  // against a live device, not a hypothetical. Symmetric with the TVEventHandler subscription
+  // above: re-subscribed on every install(), torn down on stop().
+  nativeSessionOpenedUnsubscribe = onNativeSessionOpened(() => {
+    emitClockSync();
+  });
   // This is the app's own enable trigger - see nativeTransfer.ts for why this must actually
   // start durable on-device recording, not just the JS-side buffer/subscriptions above.
   startNativeSession();
@@ -112,6 +171,8 @@ function stop(): void {
   installed = false;
   subscription?.remove();
   subscription = undefined;
+  nativeSessionOpenedUnsubscribe?.();
+  nativeSessionOpenedUnsubscribe = undefined;
   finishNativeSession();
 }
 
@@ -119,7 +180,8 @@ function mark(name: string): void {
   if (!installed) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'interaction-marker',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),
@@ -131,7 +193,8 @@ function recordFocus(targetId: string): void {
   if (!installed) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'focus',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),
@@ -145,7 +208,8 @@ function recordDispatch(actionType: string, durationMs: number): void {
   if (!installed) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'redux-dispatch',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),
@@ -165,7 +229,8 @@ function recordNetworkRequest(
   if (!installed) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'network',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),
@@ -182,7 +247,8 @@ function recordJsStall(durationMs: number): void {
   if (!installed) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'js-stall',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),
@@ -194,7 +260,8 @@ function recordFrameTiming(durationMs: number): void {
   if (!installed) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'frame-timing',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),
@@ -211,7 +278,8 @@ function recordReactCommit(
   if (!installed) {
     return;
   }
-  pushEvent({
+  maybeEmitClockSync();
+  pushToBufferAndNative({
     type: 'react-commit',
     sequence: nextSequence(),
     timestamp: monotonicNowMs(),

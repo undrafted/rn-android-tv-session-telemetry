@@ -16,6 +16,7 @@ pub struct SessionSummary {
     pub js_stall_count: usize,
     pub react_commit_count: usize,
     pub frame_timing_count: usize,
+    pub clock_sync_count: usize,
     pub sequence_start: Option<u64>,
     pub sequence_end: Option<u64>,
     pub timestamp_start: Option<f64>,
@@ -34,6 +35,7 @@ impl SessionSummary {
             js_stall_count: 0,
             react_commit_count: 0,
             frame_timing_count: 0,
+            clock_sync_count: 0,
             sequence_start: None,
             sequence_end: None,
             timestamp_start: None,
@@ -50,6 +52,7 @@ impl SessionSummary {
                 Event::JsStall(_) => summary.js_stall_count += 1,
                 Event::ReactCommit(_) => summary.react_commit_count += 1,
                 Event::FrameTiming(_) => summary.frame_timing_count += 1,
+                Event::ClockSync(_) => summary.clock_sync_count += 1,
             }
 
             let sequence = event.sequence();

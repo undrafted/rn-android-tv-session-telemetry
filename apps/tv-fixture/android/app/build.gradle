@@ -44,8 +44,12 @@ react {
     // extraPackagerArgs = []
 
     /* Hermes Commands */
-    //   The hermes compiler command to run. By default it is 'hermesc'
-    // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"
+    //   The Gradle plugin's own default lookup (node_modules/react-native/sdks/hermesc/...,
+    //   then node_modules/hermes-compiler/...) resolves relative to this app's own node_modules,
+    //   which npm workspace hoisting leaves empty - hermes-compiler only exists hoisted at the
+    //   monorepo root. Pointed here explicitly rather than fixed by setting `root`, since `root`
+    //   also redirects reactNativeDir/codegenDir/cliFile, which already resolve correctly today.
+    hermesCommand = "$rootDir/../../../node_modules/hermes-compiler/hermesc/%OS-BIN%/hermesc"
     //
     //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
     // hermesFlags = ["-O", "-output-source-map"]
@@ -108,12 +112,25 @@ android {
         // Mirrors `release` (same optimization/signing) so measured overhead is representative,
         // but the JS bundle step must be run with RNST_PROFILING=1 so the
         // __RN_SESSION_TELEMETRY_ENABLED__ Babel define resolves to `true` instead of being
-        // dead-code-eliminated. Verified end-to-end on the Android-equipped machine, not here.
+        // dead-code-eliminated. Verified end-to-end on the Android emulator.
         profiling {
             initWith release
             matchingFallbacks = ['release']
             applicationIdSuffix '.profiling'
             signingConfig signingConfigs.debug
+            // `session-telemetry pull` (session-telemetry-cli/src/main.rs) reads the recorded
+            // .rnst chunks via `adb shell run-as <package> ...`, which Android refuses outright
+            // for a non-debuggable app regardless of the device's own user/userdebug/eng build
+            // - confirmed against a real device, not just reasoned about (`run-as: package not
+            // debuggable`). `release`'s inherited `debuggable false` would make every session
+            // this build type ever records permanently unpullable, so it's overridden here.
+            // Real production release builds are unaffected - only this build type changes.
+            debuggable true
+            // The React Native Gradle plugin only auto-injects this manifest placeholder for
+            // its own "debug"/"release"/"debugOptimized" build types (AgpConfiguratorUtils,
+            // finalizeDsl) - custom types like this one, even via initWith release, are missed
+            // and fail the manifest merge without it set explicitly. "false" matches release.
+            manifestPlaceholders = [usesCleartextTraffic: "false"]
         }
     }
 }

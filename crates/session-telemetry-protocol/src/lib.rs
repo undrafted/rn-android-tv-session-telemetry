@@ -3,6 +3,6 @@
 mod event;
 
 pub use event::{
-    Event, FocusEvent, FrameTimingEvent, InteractionMarkerEvent, JsStallEvent, NetworkEvent,
-    ReactCommitEvent, ReactCommitPhase, ReduxDispatchEvent, RemoteInputEvent,
+    ClockSyncEvent, Event, FocusEvent, FrameTimingEvent, InteractionMarkerEvent, JsStallEvent,
+    NetworkEvent, ReactCommitEvent, ReactCommitPhase, ReduxDispatchEvent, RemoteInputEvent,
 };

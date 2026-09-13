@@ -22,6 +22,15 @@ function emitHardwareEvent(eventType: string): void {
   handler({ eventType });
 }
 
+// Every install() resets the clock-sync interval, so the very first pushEvent() after it always
+// piggybacks a 'clock-sync' sample (see index.ts's maybeEmitClockSync) - real and intentional,
+// but incidental to what these tests are actually checking, so they read the buffer through
+// this rather than SessionTelemetry.getBufferedEvents() directly wherever a clock-sync sample
+// would otherwise land as an unexpected extra/leading entry.
+function nonClockSyncEvents() {
+  return SessionTelemetry.getBufferedEvents().filter((event) => event.type !== 'clock-sync');
+}
+
 beforeEach(() => {
   SessionTelemetry.stop();
   addListenerMock.mockClear();
@@ -69,7 +78,7 @@ describe('remote input', () => {
     SessionTelemetry.install();
     emitHardwareEvent('right');
 
-    const events = SessionTelemetry.getBufferedEvents();
+    const events = nonClockSyncEvents();
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'remote-input', key: 'right' });
   });
@@ -89,7 +98,7 @@ describe('recordFocus', () => {
     SessionTelemetry.recordFocus('card-1');
     SessionTelemetry.recordFocus('card-2');
 
-    const [first, second] = SessionTelemetry.getBufferedEvents();
+    const [first, second] = nonClockSyncEvents();
     expect(first).toMatchObject({ type: 'focus', targetId: 'card-1', previousTargetId: null });
     expect(second).toMatchObject({
       type: 'focus',
@@ -104,7 +113,7 @@ describe('mark', () => {
     SessionTelemetry.install();
     SessionTelemetry.mark('demo:card-select');
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([
+    expect(nonClockSyncEvents()).toEqual([
       expect.objectContaining({ type: 'interaction-marker', name: 'demo:card-select' }),
     ]);
   });
@@ -115,7 +124,7 @@ describe('recordDispatch', () => {
     SessionTelemetry.install();
     SessionTelemetry.recordDispatch('catalog/itemFocused', 4.2);
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([
+    expect(nonClockSyncEvents()).toEqual([
       expect.objectContaining({
         type: 'redux-dispatch',
         actionType: 'catalog/itemFocused',
@@ -130,7 +139,7 @@ describe('recordReactCommit', () => {
     SessionTelemetry.install();
     SessionTelemetry.recordReactCommit('CatalogRow', 'update', 12.5, 8.1);
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([
+    expect(nonClockSyncEvents()).toEqual([
       expect.objectContaining({
         type: 'react-commit',
         profilerId: 'CatalogRow',
@@ -147,7 +156,7 @@ describe('recordFrameTiming', () => {
     SessionTelemetry.install();
     SessionTelemetry.recordFrameTiming(48.2);
 
-    expect(SessionTelemetry.getBufferedEvents()).toEqual([
+    expect(nonClockSyncEvents()).toEqual([
       expect.objectContaining({ type: 'frame-timing', durationMs: 48.2 }),
     ]);
   });
@@ -163,14 +172,16 @@ describe('bounded buffer', () => {
     const events = SessionTelemetry.getBufferedEvents();
     expect(events).toHaveLength(2);
     expect(events.map((event) => (event as { name: string }).name)).toEqual(['two', 'three']);
-    expect(SessionTelemetry.getDroppedEventCount()).toBe(1);
+    // 2, not 3 events' worth of drops: install()'s baseline clock-sync sample occupies a buffer
+    // slot too (see maybeEmitClockSync) and is itself evicted first, before either 'one' is.
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(2);
   });
 
   it('resets droppedEventCount on a fresh install', () => {
     SessionTelemetry.install({ maxBufferedEvents: 1 });
     SessionTelemetry.mark('one');
     SessionTelemetry.mark('two');
-    expect(SessionTelemetry.getDroppedEventCount()).toBe(1);
+    expect(SessionTelemetry.getDroppedEventCount()).toBe(2);
 
     SessionTelemetry.install({ maxBufferedEvents: 1 });
 
@@ -183,6 +194,42 @@ describe('bounded buffer', () => {
     SessionTelemetry.mark('two');
 
     expect(SessionTelemetry.getBufferedEvents()).toHaveLength(1);
+  });
+});
+
+describe('clock sync', () => {
+  it('emits a baseline clock-sync sample on the first push after install', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.mark('demo:card-select');
+
+    const events = SessionTelemetry.getBufferedEvents();
+    expect(events[0]).toMatchObject({ type: 'clock-sync' });
+    expect((events[0] as { wallClockUnixMs: number }).wallClockUnixMs).toEqual(expect.any(Number));
+  });
+
+  it('does not emit a second sample for a push that follows shortly after', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.mark('one');
+    SessionTelemetry.mark('two');
+
+    const clockSyncEvents = SessionTelemetry.getBufferedEvents().filter(
+      (event) => event.type === 'clock-sync',
+    );
+    expect(clockSyncEvents).toHaveLength(1);
+  });
+
+  it('emits a fresh baseline sample on every install, not just the first', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.mark('previous-session-event');
+    SessionTelemetry.stop();
+
+    SessionTelemetry.install();
+    SessionTelemetry.mark('new-session-event');
+
+    const clockSyncEvents = SessionTelemetry.getBufferedEvents().filter(
+      (event) => event.type === 'clock-sync',
+    );
+    expect(clockSyncEvents).toHaveLength(1);
   });
 });
 

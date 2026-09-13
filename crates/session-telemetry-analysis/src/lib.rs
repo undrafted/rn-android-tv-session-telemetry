@@ -6,7 +6,7 @@ mod detector;
 mod interaction;
 
 pub use bookmark::{QaBookmark, create_bookmark};
-pub use clock::{ClockMap, ClockSyncSample};
+pub use clock::{ClockMap, ClockSyncSample, clock_sync_samples_from_events};
 pub use detector::{
     EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR,
     EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR_VERSION, Finding,

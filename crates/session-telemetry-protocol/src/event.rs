@@ -15,6 +15,7 @@ pub enum Event {
     JsStall(JsStallEvent),
     ReactCommit(ReactCommitEvent),
     FrameTiming(FrameTimingEvent),
+    ClockSync(ClockSyncEvent),
 }
 
 impl Event {
@@ -31,10 +32,13 @@ impl Event {
             Event::JsStall(event) => event.sequence,
             Event::ReactCommit(event) => event.sequence,
             Event::FrameTiming(event) => event.sequence,
+            Event::ClockSync(event) => event.sequence,
         }
     }
 
-    /// Monotonic source-clock milliseconds. Never wall-clock.
+    /// Monotonic source-clock milliseconds. Never wall-clock (`ClockSyncEvent` is the one
+    /// exception — see its own doc comment — but `timestamp()` here still returns its monotonic
+    /// half, consistent with every other variant).
     pub fn timestamp(&self) -> f64 {
         match self {
             Event::RemoteInput(event) => event.timestamp,
@@ -45,6 +49,7 @@ impl Event {
             Event::JsStall(event) => event.timestamp,
             Event::ReactCommit(event) => event.timestamp,
             Event::FrameTiming(event) => event.timestamp,
+            Event::ClockSync(event) => event.timestamp,
         }
     }
 }
@@ -129,6 +134,21 @@ pub struct FrameTimingEvent {
     pub duration_ms: f64,
 }
 
+/// A (monotonic, wall-clock) correspondence pair, emitted periodically by the JS library
+/// (see `packages/react-native/src/index.ts`) so a workstation-side QA bookmark's wall-clock
+/// reading (`session-telemetry mark`) can be mapped onto this session's own monotonic timeline
+/// via `session_telemetry_analysis::ClockMap`. `timestamp` is the same `performance.now()`
+/// domain every other event uses; `wall_clock_unix_ms` is `Date.now()` read at that same
+/// instant — the one field in this protocol that legitimately is wall-clock, unlike every other
+/// event's `timestamp`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClockSyncEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub wall_clock_unix_ms: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,6 +213,24 @@ mod tests {
     }
 
     #[test]
+    fn decodes_a_clock_sync_event_exactly_as_the_js_library_serializes_it() {
+        let json = r#"{"type":"clock-sync","sequence":9,"timestamp":100.0,"wallClockUnixMs":1700000000123.0}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            event,
+            Event::ClockSync(ClockSyncEvent {
+                sequence: 9,
+                timestamp: 100.0,
+                wall_clock_unix_ms: 1_700_000_000_123.0,
+            })
+        );
+        assert_eq!(event.sequence(), 9);
+        assert_eq!(event.timestamp(), 100.0);
+    }
+
+    #[test]
     fn round_trips_every_variant_through_json() {
         let events = vec![
             Event::RemoteInput(RemoteInputEvent {
@@ -244,6 +282,11 @@ mod tests {
                 sequence: 7,
                 timestamp: 8.0,
                 duration_ms: 48.2,
+            }),
+            Event::ClockSync(ClockSyncEvent {
+                sequence: 8,
+                timestamp: 9.0,
+                wall_clock_unix_ms: 1_700_000_000_000.0,
             }),
         ];
 

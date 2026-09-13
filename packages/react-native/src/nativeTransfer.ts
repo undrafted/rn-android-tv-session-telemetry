@@ -1,5 +1,7 @@
-import { NativeModules } from 'react-native';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 import type { SessionTelemetryEvent } from './events.js';
+
+const SESSION_OPENED_EVENT = 'RNSessionTelemetryWriter.sessionOpened';
 
 interface NativeSessionWriter {
   pushEvent(eventJson: string): void;
@@ -35,4 +37,22 @@ export function startNativeSession(): void {
 // bidirectional counterpart to `session-telemetry stop`.
 export function finishNativeSession(): void {
   nativeWriter()?.finish();
+}
+
+// Subscribes to the native module's notification that a fresh native session just opened -
+// fired for *either* trigger (this app's own startNativeSession() above, or a
+// `session-telemetry record` ADB broadcast the native module also listens for), since JS has no
+// other way to observe a broadcast-triggered native session boundary. index.ts uses this to
+// force an immediate clock-sync sample into that session rather than waiting on its own
+// periodic interval, which a short session could otherwise entirely outlast. Returns a no-op
+// unsubscribe when the native module isn't linked, the same graceful-absence behavior as every
+// other optional signal in this library.
+export function onNativeSessionOpened(callback: () => void): () => void {
+  const nativeModule = NativeModules.RNSessionTelemetryWriter as object | undefined;
+  if (!nativeModule) {
+    return () => {};
+  }
+  const emitter = new NativeEventEmitter(nativeModule as never);
+  const subscription = emitter.addListener(SESSION_OPENED_EVENT, callback);
+  return () => subscription.remove();
 }

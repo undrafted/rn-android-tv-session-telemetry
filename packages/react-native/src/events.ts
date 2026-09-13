@@ -66,6 +66,18 @@ export interface FrameTimingEvent {
   durationMs: number;
 }
 
+// A (monotonic, wall-clock) correspondence pair, emitted periodically (see index.ts) so a
+// workstation-side QA bookmark ('session-telemetry mark', a wall-clock reading with no live
+// device bridge) can be mapped onto this session's own monotonic timeline. `timestamp` is the
+// same performance.now() domain every other event uses; `wallClockUnixMs` is Date.now() read at
+// that same instant - the one field in this protocol that legitimately is wall-clock.
+export interface ClockSyncEvent {
+  type: 'clock-sync';
+  sequence: number;
+  timestamp: number;
+  wallClockUnixMs: number;
+}
+
 export type SessionTelemetryEvent =
   | RemoteInputEvent
   | FocusEvent
@@ -74,7 +86,8 @@ export type SessionTelemetryEvent =
   | NetworkEvent
   | JsStallEvent
   | ReactCommitEvent
-  | FrameTimingEvent;
+  | FrameTimingEvent
+  | ClockSyncEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,

@@ -5,7 +5,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use session_telemetry_adb::{DeviceInfo, DeviceState};
-use session_telemetry_analysis::{Finding, Severity};
+use session_telemetry_analysis::{Finding, QaBookmark, Severity};
 use std::time::SystemTime;
 
 /// Most subcommands are parsed but not yet implemented — see `main.rs` for which ones actually
@@ -60,7 +60,7 @@ pub enum Command {
         /// modification time, under ./pulled-sessions/). Named lookup by session name isn't
         /// implemented yet — only a direct path or "latest" work today.
         session: String,
-        /// Not implemented yet — no HTML report exists to open.
+        /// Open the generated HTML report with the OS default application once it's written.
         #[arg(long)]
         open: bool,
     },
@@ -105,15 +105,40 @@ impl RecordMode {
 }
 
 /// A `session-telemetry mark` annotation — plan.md's "QA annotation" row: workstation
-/// timestamp, (eventually) mapped session timestamp, bookmark label. Only the workstation side
-/// is captured here; mapping it onto the session's own timeline needs a `ClockMap` built from
-/// real clock-sync samples, which isn't wired up yet — see `create_bookmark` in
-/// session-telemetry-analysis for the mapping step this feeds into once that exists.
+/// timestamp and bookmark label, captured with no live device bridge. Mapping it onto the
+/// session's own timeline happens later, at `analyze`/`report` time, via `create_bookmark` in
+/// session-telemetry-analysis and the clock-sync samples decoded from the pulled chunk (plus
+/// `BookmarkFile::device_clock_offset_ms`, captured once at `record` time).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bookmark {
     pub label: String,
     pub workstation_timestamp_unix_ms: u64,
+}
+
+/// What `stop` persists to `~/.session-telemetry/bookmarks/<name>-<started_at>.json`, and what
+/// `pull` copies alongside the pulled chunks as `bookmarks.json` for `analyze`/`report` to read.
+/// `device_clock_offset_ms` (device wall clock minus workstation wall clock, sampled once via
+/// `adb shell date` at `record` time) corrects `Bookmark::workstation_timestamp_unix_ms` onto
+/// the device's own wall-clock domain before it's mapped onto the session timeline — without it,
+/// two machines with merely-different system clocks (not even actually desynced/wrong) would
+/// silently place bookmarks at the wrong moment. `None` when the offset couldn't be measured
+/// (`adb shell date` failed) — mapping falls back to assuming the two clocks already agree.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookmarkFile {
+    pub device_clock_offset_ms: Option<i64>,
+    pub bookmarks: Vec<Bookmark>,
+}
+
+impl BookmarkFile {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    pub fn from_json(json: &str) -> Result<BookmarkFile, serde_json::Error> {
+        serde_json::from_str(json)
+    }
 }
 
 /// The CLI's own record of "a recording is active", and the QA bookmarks captured against it
@@ -133,6 +158,10 @@ pub struct SessionState {
     pub started_at_unix_ms: u64,
     #[serde(default)]
     pub bookmarks: Vec<Bookmark>,
+    /// Device wall clock minus workstation wall clock, in milliseconds, sampled once via
+    /// `adb shell date` when `record` started — see `BookmarkFile::device_clock_offset_ms`.
+    #[serde(default)]
+    pub device_clock_offset_ms: Option<i64>,
 }
 
 impl SessionState {
@@ -251,6 +280,26 @@ pub fn format_findings(findings: &[Finding]) -> String {
                 finding.sequence_end,
                 finding.value,
                 finding.unit
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Human-readable bookmark listing for `session-telemetry analyze`, mirroring `format_findings`.
+/// `bookmarks` are already mapped onto the session timeline (see `create_bookmark`) by the
+/// caller — this only renders them.
+pub fn format_bookmarks(bookmarks: &[QaBookmark]) -> String {
+    if bookmarks.is_empty() {
+        return String::new();
+    }
+
+    bookmarks
+        .iter()
+        .map(|bookmark| {
+            format!(
+                "[bookmark] {:.0} ms: {}",
+                bookmark.session_timestamp, bookmark.label
             )
         })
         .collect::<Vec<_>>()
@@ -400,6 +449,7 @@ mod tests {
             package: "com.rnsessiontelemetry.tvfixture".to_string(),
             started_at_unix_ms: 1_000,
             bookmarks: Vec::new(),
+            device_clock_offset_ms: None,
         }
     }
 
@@ -514,6 +564,39 @@ mod tests {
             format_findings(&findings),
             "[warning] high-latency-focus-change (v1): sequence 3-7, 214 ms"
         );
+    }
+
+    #[test]
+    fn format_bookmarks_is_empty_when_there_are_none() {
+        assert_eq!(format_bookmarks(&[]), "");
+    }
+
+    #[test]
+    fn format_bookmarks_includes_the_mapped_timestamp_and_label() {
+        let bookmarks = vec![QaBookmark {
+            workstation_timestamp: 1_700_000_000_500.0,
+            session_timestamp: 4_200.0,
+            label: "carousel stopped responding".to_string(),
+        }];
+
+        assert_eq!(
+            format_bookmarks(&bookmarks),
+            "[bookmark] 4200 ms: carousel stopped responding"
+        );
+    }
+
+    #[test]
+    fn bookmark_file_round_trips_through_json() {
+        let file = BookmarkFile {
+            device_clock_offset_ms: Some(-9_155_000),
+            bookmarks: vec![Bookmark {
+                label: "navigation felt delayed".to_string(),
+                workstation_timestamp_unix_ms: 1_700_000_000_000,
+            }],
+        };
+
+        let json = file.to_json().unwrap();
+        assert_eq!(BookmarkFile::from_json(&json).unwrap(), file);
     }
 
     #[test]

@@ -4,16 +4,17 @@ use session_telemetry_adb::{
     resolve_session_dir,
 };
 use session_telemetry_analysis::{
-    Finding, build_interaction_windows, detect_excessive_commits_during_rapid_focus_movement,
+    ClockMap, Finding, QaBookmark, build_interaction_windows, clock_sync_samples_from_events,
+    create_bookmark, detect_excessive_commits_during_rapid_focus_movement,
     detect_high_latency_focus_changes, detect_js_stalls_overlapping_interactions,
     detect_network_completions_followed_by_commits,
     detect_react_commits_overlapping_delayed_frames, detect_repeated_network_requests,
     detect_repeated_redux_dispatches,
 };
 use session_telemetry_cli::{
-    Bookmark, Cli, Command, RecordMode, SessionState, format_devices, format_findings,
-    format_mark_confirmation, format_record_started, format_status, format_stop_summary,
-    opener_command, resolve_latest_session_file,
+    Bookmark, BookmarkFile, Cli, Command, RecordMode, SessionState, format_bookmarks,
+    format_devices, format_findings, format_mark_confirmation, format_record_started,
+    format_status, format_stop_summary, opener_command, resolve_latest_session_file,
 };
 use session_telemetry_report::{SessionSummary, render_html};
 use session_telemetry_session::Chunk;
@@ -155,6 +156,32 @@ fn send_broadcast(device: &str, package: &str, action: &str) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
+/// Reads the device's own wall clock (second precision) via `adb shell date +%s` and returns
+/// its offset from the workstation's wall clock, in milliseconds (device minus workstation).
+/// Captured once at `record` time so bookmark timestamps (workstation-side, see `run_mark`) can
+/// be corrected onto the device's own wall-clock domain before being mapped onto the session
+/// timeline — two machines with merely different system clocks (not necessarily wrong ones)
+/// would otherwise silently place bookmarks at the wrong moment. `None` (not a fatal error) if
+/// `adb` or the shell command fails, or its output doesn't parse — mapping then falls back to
+/// assuming the two clocks already agree. Second precision (not `%3N` milliseconds) because
+/// `date`'s exact flag support varies across Android/toybox versions; the ADB round-trip itself
+/// already costs more latency than sub-second precision would recover.
+fn device_clock_offset_ms(device: &str) -> Option<i64> {
+    let workstation_now = now_unix_ms() as i64;
+    let output = ProcessCommand::new("adb")
+        .args(["-s", device, "shell", "date", "+%s"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let device_now_secs: i64 = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .ok()?;
+    Some(device_now_secs * 1000 - workstation_now)
+}
+
 fn run_record(mode: RecordMode, device: String, name: String, package: String) {
     if load_session_state().is_some() {
         eprintln!(
@@ -170,6 +197,7 @@ fn run_record(mode: RecordMode, device: String, name: String, package: String) {
     }
 
     send_broadcast(&device, &package, ACTION_START_SESSION);
+    let device_clock_offset_ms = device_clock_offset_ms(&device);
 
     let state = SessionState {
         name,
@@ -178,6 +206,7 @@ fn run_record(mode: RecordMode, device: String, name: String, package: String) {
         package,
         started_at_unix_ms: now_unix_ms(),
         bookmarks: Vec::new(),
+        device_clock_offset_ms,
     };
     save_session_state(&state);
     println!("{}", format_record_started(&state));
@@ -192,6 +221,25 @@ fn bookmarks_file_path(state: &SessionState) -> PathBuf {
         .join(".session-telemetry")
         .join("bookmarks")
         .join(format!("{}-{}.json", state.name, state.started_at_unix_ms))
+}
+
+/// The most recently modified file under `~/.session-telemetry/bookmarks/`, if any. `pull`
+/// copies it alongside the chunks it just pulled as a best-effort association: only one
+/// recording can be active at a time (`run_record` refuses to start a second one), so in the
+/// normal record → mark → stop → pull workflow, the most recently stopped session's bookmarks
+/// are exactly the ones the very next pull is for. There's no stronger link available — the CLI
+/// never learns the on-device session directory name `stop` actually sealed, only `pull` does.
+fn latest_bookmarks_file() -> Option<PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let dir = PathBuf::from(home)
+        .join(".session-telemetry")
+        .join("bookmarks");
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+        .max_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok())
+        .map(|entry| entry.path())
 }
 
 fn run_mark(label: &str) {
@@ -218,7 +266,11 @@ fn run_stop() {
                 if let Some(parent) = path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                if let Ok(json) = serde_json::to_string_pretty(&state.bookmarks)
+                let file = BookmarkFile {
+                    device_clock_offset_ms: state.device_clock_offset_ms,
+                    bookmarks: state.bookmarks.clone(),
+                };
+                if let Ok(json) = file.to_json()
                     && std::fs::write(&path, json).is_ok()
                 {
                     println!("Bookmarks saved to {}", path.display());
@@ -337,6 +389,16 @@ fn run_pull(session: &str, device: &str, package: &str, out: Option<String>, kee
 
     println!("Pulled {pulled_count} chunk(s) from {session_name} into {out_dir}/");
 
+    if let Some(path) = latest_bookmarks_file()
+        && let Ok(bytes) = std::fs::read(&path)
+        && std::fs::write(Path::new(&out_dir).join("bookmarks.json"), bytes).is_ok()
+    {
+        println!(
+            "Copied bookmarks from {} into {out_dir}/bookmarks.json",
+            path.display()
+        );
+    }
+
     // Siblings of out_dir under the same parent - the default `pulled-sessions/<session>` shape
     // and a custom `--out` both generalize the same way, so pruning isn't tied to the default
     // location specifically.
@@ -429,10 +491,54 @@ fn collect_findings(chunk: &Chunk) -> Vec<Finding> {
     findings
 }
 
+/// Looks for a `bookmarks.json` next to the resolved chunk file (see `run_pull`'s copy step)
+/// and, if found, maps each bookmark onto this session's own monotonic timeline using clock-sync
+/// samples decoded from the chunk itself, corrected by the device/workstation clock offset
+/// captured at `record` time. Prints a warning (not a hard failure — the rest of analyze/report
+/// still runs) when bookmarks exist but the chunk carries no clock-sync samples to map them
+/// with, e.g. a very short or otherwise idle session that never triggered one.
+fn load_mapped_bookmarks(session_path: &str, chunk: &Chunk) -> Vec<QaBookmark> {
+    let Some(dir) = Path::new(session_path).parent() else {
+        return Vec::new();
+    };
+    let Ok(json) = std::fs::read_to_string(dir.join("bookmarks.json")) else {
+        return Vec::new();
+    };
+    let Ok(file) = BookmarkFile::from_json(&json) else {
+        return Vec::new();
+    };
+    if file.bookmarks.is_empty() {
+        return Vec::new();
+    }
+
+    let samples = clock_sync_samples_from_events(&chunk.events);
+    let Some(clock_map) = ClockMap::from_samples(&samples) else {
+        eprintln!(
+            "{} bookmark(s) found but this session has no clock-sync samples to map them with - skipping.",
+            file.bookmarks.len()
+        );
+        return Vec::new();
+    };
+
+    file.bookmarks
+        .iter()
+        .map(|bookmark| {
+            let corrected = bookmark.workstation_timestamp_unix_ms as f64
+                + file.device_clock_offset_ms.unwrap_or(0) as f64;
+            create_bookmark(&clock_map, corrected, bookmark.label.clone())
+        })
+        .collect()
+}
+
 fn run_analyze(session: &str) {
     let session = resolve_session_path(session);
     let chunk = load_chunk(&session);
     println!("{}", format_findings(&collect_findings(&chunk)));
+
+    let bookmarks = load_mapped_bookmarks(&session, &chunk);
+    if !bookmarks.is_empty() {
+        println!("{}", format_bookmarks(&bookmarks));
+    }
 }
 
 fn run_report(session: &str, open: bool) {
@@ -440,6 +546,7 @@ fn run_report(session: &str, open: bool) {
     let chunk = load_chunk(&session);
     let summary = SessionSummary::from_events(&chunk.events);
     let findings = collect_findings(&chunk);
+    let bookmarks = load_mapped_bookmarks(&session, &chunk);
 
     match summary.to_json() {
         Ok(json) => println!("{json}"),
@@ -450,7 +557,7 @@ fn run_report(session: &str, open: bool) {
     }
 
     let html_path = format!("{session}.html");
-    let html = render_html(&summary, &findings, &chunk.events);
+    let html = render_html(&summary, &findings, &chunk.events, &bookmarks);
     if let Err(err) = std::fs::write(&html_path, html) {
         eprintln!("could not write HTML report to {html_path}: {err}");
         exit(1);
