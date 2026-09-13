@@ -134,13 +134,13 @@ pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<F
         .collect()
 }
 
-/// Flags interactions whose input-to-visible-update latency crosses a threshold — the headline
-/// metric plan.md's own example trace leads with ("214 ms to visible update"), more meaningful
-/// than focus-change latency alone because it reflects when the user actually saw something
-/// change, not just when application state settled. Relies on `VisibleUpdateEvent`, itself a
-/// best-effort proxy (see its own doc comment) — this detector inherits that same uncertainty,
-/// not a frame-accurate guarantee. The 100ms/300ms thresholds are placeholders pending real
-/// device measurements, same caveat as every other detector's thresholds.
+/// Flags interactions whose input-to-visible-update latency crosses a threshold. This metric
+/// is more meaningful than focus-change latency alone because it reflects when the user
+/// actually saw something change, not just when application state settled. Relies on
+/// `VisibleUpdateEvent`, itself a best-effort proxy (see its own doc comment) — this detector
+/// inherits that same uncertainty, not a frame-accurate guarantee. The 100ms/300ms thresholds
+/// are placeholders pending real device measurements, same caveat as every other detector's
+/// thresholds.
 pub fn detect_high_latency_visible_updates(windows: &[InteractionWindow]) -> Vec<Finding> {
     const WARNING_THRESHOLD_MS: f64 = 100.0;
     const CRITICAL_THRESHOLD_MS: f64 = 300.0;

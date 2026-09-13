@@ -2,8 +2,8 @@ use serde::Serialize;
 use session_telemetry_protocol::Event;
 use std::collections::BTreeMap;
 
-/// Aggregate stats for one instrumented selector across the whole session — plan.md's own
-/// "Selector invocation, recomputation, duration, and unstable-result rates" metric.
+/// Aggregate stats for one instrumented selector across the whole session: invocation,
+/// recomputation, duration, and unstable-result rates.
 /// `recomputation_count` counts invocations where `inputs_changed` was `false` (the selector ran
 /// again despite unchanged arguments — real work regardless of whether the caller needed it).
 /// `unstable_result_count` counts the subset of those that also returned a different reference

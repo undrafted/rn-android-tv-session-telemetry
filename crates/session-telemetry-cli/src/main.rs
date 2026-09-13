@@ -140,12 +140,12 @@ fn device_is_connected(device: &str) -> bool {
 const ACTION_START_SESSION: &str = "com.rnsessiontelemetry.reactnative.action.START_SESSION";
 const ACTION_STOP_SESSION: &str = "com.rnsessiontelemetry.reactnative.action.STOP_SESSION";
 
-/// Sends a session-control broadcast to `package` on `device`. Best-effort by design, not just
-/// by accident: `record` is commonly run *before* the app has even launched (plan.md's own
-/// workflow example is `record` then "use the TV application"), so there's often nothing alive
-/// yet to receive it - the app's own autonomous start (SessionTelemetry.install() on launch)
-/// covers that case regardless. Returns whether the `adb` invocation itself succeeded, which
-/// only confirms the broadcast was sent, not that anything was listening for it.
+/// Sends a session-control broadcast to `package` on `device`. Best-effort by design, not
+/// just by accident: `record` is commonly run *before* the app has even launched, so there's
+/// often nothing alive yet to receive it - the app's own autonomous start
+/// (SessionTelemetry.install() on launch) covers that case regardless. Returns whether the
+/// `adb` invocation itself succeeded, which only confirms the broadcast was sent, not that
+/// anything was listening for it.
 fn send_broadcast(device: &str, package: &str, action: &str) -> bool {
     ProcessCommand::new("adb")
         .args([
@@ -301,12 +301,12 @@ fn run_status() {
     );
 }
 
-/// Tails the active recording's sealed chunks without waiting for `stop`/`pull` — the "optional
-/// live event connection" plan.md describes, built as a read-only poll over the same `run-as
-/// find`/`cat` primitives `pull` already uses, rather than a socket. Never touches the chunk
-/// currently being written (only ever `resolve_latest_chunk_file`, which only sees sealed
-/// files), so a dropped `watch` process or ADB connection can't affect the recording itself —
-/// completed chunks stay the recovery source of truth regardless, same as `pull`.
+/// Tails the active recording's sealed chunks without waiting for `stop`/`pull` using a
+/// read-only poll over the same `run-as find`/`cat` primitives `pull` already uses, rather
+/// than a socket. Never touches the chunk currently being written (only ever
+/// `resolve_latest_chunk_file`, which only sees sealed files), so a dropped `watch` process
+/// or ADB connection can't affect the recording itself — completed chunks stay the recovery
+/// source of truth regardless, same as `pull`.
 fn run_watch(interval_secs: u64) {
     let Some(state) = load_session_state() else {
         eprintln!("No active recording. Run `session-telemetry record` first.");

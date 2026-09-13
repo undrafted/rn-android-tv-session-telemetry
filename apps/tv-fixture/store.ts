@@ -1,5 +1,5 @@
 /**
- * A minimal Redux store demonstrating M7's selector instrumentation — one stable selector and
+ * A minimal Redux store demonstrating selector instrumentation — one stable selector and
  * one deliberately unstable one, both wrapped with telemetrySelector so a normal interaction in
  * this app produces the real "repeated recomputation" and "unstable reference" findings, not a
  * contrived one.
@@ -65,7 +65,7 @@ export const selectItemCount = telemetrySelector(
 );
 
 // Bad: .map() returns a fresh array every call even though state.catalog.items itself never
-// changes reference — the classic unstable-selector bug this milestone's detectors catch.
+// changes reference — the classic unstable-selector bug the detectors catch.
 export const selectVisibleItemIds = telemetrySelector(
   'catalog/selectVisibleItemIds',
   (state: AppState) => state.catalog.items.map(item => item.id),

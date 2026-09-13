@@ -114,7 +114,7 @@ android {
         // __RN_SESSION_TELEMETRY_ENABLED__ Babel define resolves to `true` instead of being
         // dead-code-eliminated.
         //
-        // Known gap, confirmed against a real build while verifying M6: `createBundleProfilingJsAndAssets`
+        // Known gap, confirmed against a real build: `createBundleProfilingJsAndAssets`
         // (React Native Gradle Plugin's BundleHermesCTask) has no Gradle-DSL environment hook and
         // doesn't track env vars as task inputs, so it silently inherits whatever environment the
         // Gradle daemon happened to start with - a plain `npm run android` can produce a bundle

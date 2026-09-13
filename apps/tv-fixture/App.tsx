@@ -7,7 +7,7 @@
  * focus change could ever occur. Focus/visible-update capture is zero-footprint: a plain
  * `Pressable` with `nativeID` is all that's needed (see index.js's startGlobalFocusMonitor()) —
  * no telemetry-specific wrapper component or onFocus/onBlur handler required. Also wired to a
- * minimal Redux store (store.ts) demonstrating M7's selector instrumentation. Later grows into a
+ * minimal Redux store (store.ts) demonstrating selector instrumentation. Later grows into a
  * deliberately inefficient demonstration app.
  *
  * @format

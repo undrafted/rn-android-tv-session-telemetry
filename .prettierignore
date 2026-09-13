@@ -6,4 +6,4 @@ android/**/build/
 *.rnst
 
 # Local-only planning doc, not generated/maintained by this toolchain
-plan.md
+prose/plan.md

@@ -8,8 +8,8 @@ use session_telemetry_protocol::{Event, FocusEvent, RemoteInputEvent, VisibleUpd
 /// session ended.
 ///
 /// Both `latency_ms()` (input-to-focus-change) and `visible_update_latency_ms()`
-/// (input-to-visible-update, the more meaningful metric per plan.md's own example trace) stay
-/// available side by side — don't conflate the two when reading results from this module.
+/// (input-to-visible-update) stay available side by side — don't conflate the two when
+/// reading results from this module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InteractionWindow {
     pub input: RemoteInputEvent,

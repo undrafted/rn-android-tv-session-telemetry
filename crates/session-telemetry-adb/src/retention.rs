@@ -3,11 +3,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// Given known sealed sessions (id + a recency timestamp) and how many to keep, returns the ids
-/// to prune — the oldest ones beyond `keep_count`. Plan.md section 8.3: "Retain a bounded
-/// number of sealed sessions for recovery." Pure decision logic, deliberately separated from
-/// real filesystem I/O below so it's testable without relying on OS mtime resolution/timing,
-/// which is exactly the kind of thing that makes tests flaky.
+/// Given known sealed sessions (id + a recency timestamp) and how many to keep, returns the
+/// ids to prune — the oldest ones beyond `keep_count`, retaining a bounded number of sealed
+/// sessions for recovery. Pure decision logic, deliberately separated from real filesystem
+/// I/O below so it's testable without relying on OS mtime resolution/timing, which is exactly
+/// the kind of thing that makes tests flaky.
 pub fn sessions_to_prune(sessions: &[(String, SystemTime)], keep_count: usize) -> Vec<&str> {
     let mut newest_first: Vec<&(String, SystemTime)> = sessions.iter().collect();
     newest_first.sort_by_key(|entry| std::cmp::Reverse(entry.1));

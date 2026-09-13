@@ -126,10 +126,10 @@ pub enum ReportFormat {
     Json,
 }
 
-/// A `session-telemetry mark` annotation — plan.md's "QA annotation" row: workstation
-/// timestamp and bookmark label, captured with no live device bridge. Mapping it onto the
-/// session's own timeline happens later, at `analyze`/`report` time, via `create_bookmark` in
-/// session-telemetry-analysis and the clock-sync samples decoded from the pulled chunk (plus
+/// A `session-telemetry mark` annotation: workstation timestamp and bookmark label, captured
+/// with no live device bridge. Mapping it onto the session's own timeline happens later, at
+/// `analyze`/`report` time, via `create_bookmark` in session-telemetry-analysis and the
+/// clock-sync samples decoded from the pulled chunk (plus
 /// `BookmarkFile::device_clock_offset_ms`, captured once at `record` time).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -327,10 +327,10 @@ pub fn format_findings(findings: &[Finding]) -> String {
         .join("\n")
 }
 
-/// Printed by `session-telemetry analyze` — plan.md success criterion #9 ("event loss ... is
-/// visible in the report"), the plain-text side of the same disclosure `render_summary` (HTML)
-/// gives. Always printed, not just when non-zero: this is a disclosure of what's known, and
-/// silence would read as "not tracked" rather than "tracked, and zero."
+/// Printed by `session-telemetry analyze` to disclose event loss, matching the disclosure
+/// given by `render_summary` (HTML). Always printed, not just when non-zero: this is a
+/// disclosure of what's known, and silence would read as "not tracked" rather than "tracked,
+/// and zero."
 pub fn format_event_loss(loss_count: u32) -> String {
     match loss_count {
         0 => "No events lost.".to_string(),

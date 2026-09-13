@@ -154,8 +154,8 @@ fn render_finding_rows(finding: &FindingWithEvidence) -> String {
     format!("{finding_row}\n<tr class=\"evidence-row\"><td colspan=\"4\">{evidence}</td></tr>")
 }
 
-/// A finding's already-attached evidence events, rendered as an elapsed-time list — the same
-/// shape as plan.md section 1's example trace ("4 ms Redux action: catalog/itemFocused").
+/// A finding's already-attached evidence events, rendered as an elapsed-time list
+/// (e.g. "4 ms Redux action: catalog/itemFocused").
 /// Elapsed time is relative to the window's own first event, not the session start, so each
 /// finding's timeline reads on its own.
 fn render_evidence_timeline(window_events: &[&Event]) -> String {
@@ -286,8 +286,7 @@ fn event_type_tag(event: &Event) -> &'static str {
 
 /// The whole session as one chronological, filterable list — behind a closed-by-default
 /// `<details>` disclosure so a long session's report still *opens* with just the summary
-/// (plan.md success criterion #13: don't render every long-session event at once) while the
-/// complete trace stays one click away. Each finding's sequence-range link
+/// while the complete trace stays one click away. Each finding's sequence-range link
 /// (`render_finding_rows`) jumps straight to its first event here via `#event-{sequence}`.
 /// Omitted entirely for an empty session, same as `render_bookmarks`.
 fn render_timeline(events: &[Event]) -> String {
