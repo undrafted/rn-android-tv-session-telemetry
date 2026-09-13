@@ -2,14 +2,9 @@ use serde::{Deserialize, Serialize};
 use session_telemetry_protocol::Event;
 use std::fmt;
 
-/// Bumped when the on-disk chunk shape changes; lets the host decide whether it can decode an
-/// older chunk directly or needs a schema-upgrade path.
-pub const SCHEMA_VERSION: u32 = 1;
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChunkManifest {
-    pub schema_version: u32,
     pub sequence_start: u64,
     pub sequence_end: u64,
     pub timestamp_start: f64,
@@ -102,7 +97,6 @@ impl ChunkWriter {
 
         Some(Chunk {
             manifest: ChunkManifest {
-                schema_version: SCHEMA_VERSION,
                 sequence_start,
                 sequence_end,
                 timestamp_start,
@@ -176,6 +170,35 @@ mod tests {
     #[test]
     fn sealing_an_empty_writer_returns_none() {
         assert!(ChunkWriter::new().seal().is_none());
+    }
+
+    #[test]
+    fn react_timestamps_preserve_checksum_and_round_trip() {
+        for timing in ["", r#","renderStartMs":10.0,"commitTimeMs":80.0"#] {
+            // Compute the stored checksum from raw JSON, independent of the new event type.
+            let events = format!(
+                r#"[{{"type":"react-commit","sequence":1,"timestamp":100.0,"profilerId":"App","phase":"update","actualDurationMs":5.0,"baseDurationMs":5.0{timing}}}]"#
+            );
+            let checksum = crc32fast::hash(events.as_bytes());
+
+            let bytes = format!(
+                r#"{{"manifest":{{"sequenceStart":1,"sequenceEnd":1,"timestampStart":100.0,"timestampEnd":100.0,"eventCount":1,"lossCount":0,"checksum":{checksum}}},"events":{events}}}"#
+            );
+            let chunk = Chunk::decode(bytes.as_bytes()).unwrap();
+            assert_eq!(Chunk::decode(&chunk.encode().unwrap()).unwrap(), chunk);
+            assert_eq!(serde_json::to_string(&chunk.events).unwrap(), events);
+            if !timing.is_empty() {
+                let mut tampered = chunk.clone();
+                let Event::ReactCommit(event) = &mut tampered.events[0] else {
+                    unreachable!()
+                };
+                event.commit_time_ms = Some(90.0);
+                assert!(matches!(
+                    Chunk::decode(&tampered.encode().unwrap()),
+                    Err(ChunkError::ChecksumMismatch { .. })
+                ));
+            }
+        }
     }
 
     #[test]

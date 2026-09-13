@@ -16,6 +16,13 @@ describe('onProfilerRender', () => {
   it('forwards React Profiler measurements to recordReactCommit', () => {
     onProfilerRender('CatalogRow', 'mount', 12.5, 8.1, 100, 112.5);
 
-    expect(recordReactCommitMock).toHaveBeenCalledWith('CatalogRow', 'mount', 12.5, 8.1);
+    expect(recordReactCommitMock).toHaveBeenCalledWith(
+      'CatalogRow',
+      'mount',
+      12.5,
+      8.1,
+      100,
+      112.5,
+    );
   });
 });

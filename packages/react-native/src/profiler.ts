@@ -8,9 +8,18 @@ export const onProfilerRender: ProfilerOnRenderCallback = (
   phase,
   actualDuration,
   baseDuration,
+  startTime,
+  commitTime,
 ) => {
   try {
-    SessionTelemetry.recordReactCommit(id, phase, actualDuration, baseDuration);
+    SessionTelemetry.recordReactCommit(
+      id,
+      phase,
+      actualDuration,
+      baseDuration,
+      startTime,
+      commitTime,
+    );
   } catch {
     // Recording is observational, including when the optional native writer fails.
   }

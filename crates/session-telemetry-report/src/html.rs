@@ -140,12 +140,11 @@ fn render_finding_rows(finding: &FindingWithEvidence) -> String {
     let finding_row = format!(
         "<tr class=\"{severity_class}\">\
          <td>{severity_label}</td>\
-         <td>{} (v{})</td>\
+         <td>{}</td>\
          <td><a href=\"#event-{start}\">{start}–{end}</a></td>\
          <td>{} {}</td>\
          </tr>",
         finding.finding.detector,
-        finding.finding.detector_version,
         finding.finding.value,
         finding.finding.unit,
         start = finding.finding.sequence_start,
@@ -396,12 +395,24 @@ fn describe_event(event: &Event) -> String {
             event.duration_ms
         ),
         Event::JsStall(event) => format!("JS stall ({} ms)", event.duration_ms),
-        Event::ReactCommit(event) => format!(
-            "React commit: {} ({}, {} ms)",
-            escape_html(&event.profiler_id),
-            describe_phase(event.phase),
-            event.actual_duration_ms
-        ),
+        Event::ReactCommit(event) => {
+            let interval = match event.render_interval() {
+                Some((start, end)) => format!(
+                    "render start {start:.3} ms, commit {end:.3} ms; elapsed {:.3} ms (may include pauses)",
+                    end - start
+                ),
+                None => {
+                    "renderer timestamps incomplete or invalid; overlap unavailable".to_string()
+                }
+            };
+            format!(
+                "React commit: {} ({}, {} ms render work; {})",
+                escape_html(&event.profiler_id),
+                describe_phase(event.phase),
+                event.actual_duration_ms,
+                interval
+            )
+        }
         Event::FrameTiming(event) => format!("Delayed frame ({} ms)", event.duration_ms),
         Event::ClockSync(_) => "Clock sync sample".to_string(),
         Event::VisibleUpdate(event) => format!("Visible update: {}", escape_html(&event.target_id)),
@@ -484,7 +495,6 @@ mod tests {
         Finding {
             id: format!("high-latency-focus-change-{sequence_start}-{sequence_end}"),
             detector: "high-latency-focus-change",
-            detector_version: 1,
             severity: Severity::Warning,
             sequence_start,
             sequence_end,
@@ -593,7 +603,7 @@ mod tests {
         let html = html_for(&SessionSummary::from_events(&[]), &findings, &[], &[]);
 
         assert!(html.contains("tr class=\"warning\""));
-        assert!(html.contains("high-latency-focus-change (v1)"));
+        assert!(html.contains("high-latency-focus-change"));
         assert!(html.contains("3–7"));
         assert!(html.contains("214 ms"));
     }

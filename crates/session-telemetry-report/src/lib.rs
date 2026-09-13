@@ -5,5 +5,5 @@ mod report;
 mod summary;
 
 pub use html::render_html;
-pub use report::{FindingWithEvidence, REPORT_SCHEMA_VERSION, Report};
+pub use report::{FindingWithEvidence, Report};
 pub use summary::SessionSummary;

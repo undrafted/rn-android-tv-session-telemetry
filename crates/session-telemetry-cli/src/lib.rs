@@ -314,9 +314,8 @@ pub fn format_findings(findings: &[Finding]) -> String {
                 Severity::Critical => "critical",
             };
             format!(
-                "[{severity}] {} (v{}): sequence {}-{}, {} {}",
+                "[{severity}] {}: sequence {}-{}, {} {}",
                 finding.detector,
-                finding.detector_version,
                 finding.sequence_start,
                 finding.sequence_end,
                 finding.value,
@@ -553,7 +552,6 @@ mod tests {
     #[test]
     fn format_watch_line_reports_the_latest_chunk() {
         let manifest = ChunkManifest {
-            schema_version: 1,
             sequence_start: 4,
             sequence_end: 9,
             timestamp_start: 1_000.0,
@@ -648,7 +646,6 @@ mod tests {
         let findings = vec![Finding {
             id: "high-latency-focus-change-3-7".to_string(),
             detector: "high-latency-focus-change",
-            detector_version: 1,
             severity: Severity::Warning,
             sequence_start: 3,
             sequence_end: 7,
@@ -660,7 +657,7 @@ mod tests {
 
         assert_eq!(
             format_findings(&findings),
-            "[warning] high-latency-focus-change (v1): sequence 3-7, 214 ms"
+            "[warning] high-latency-focus-change: sequence 3-7, 214 ms"
         );
     }
 

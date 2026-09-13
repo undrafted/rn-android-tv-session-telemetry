@@ -68,6 +68,8 @@ export interface SessionTelemetryApi {
     phase: 'mount' | 'update' | 'nested-update',
     actualDurationMs: number,
     baseDurationMs: number,
+    renderStartMs?: number,
+    commitTimeMs?: number,
   ): void;
   recordSelector(
     selectorId: string,
@@ -345,6 +347,8 @@ function recordReactCommit(
   phase: 'mount' | 'update' | 'nested-update',
   actualDurationMs: number,
   baseDurationMs: number,
+  renderStartMs?: number,
+  commitTimeMs?: number,
 ): void {
   if (!installed) {
     return;
@@ -358,6 +362,8 @@ function recordReactCommit(
     phase,
     actualDurationMs,
     baseDurationMs,
+    ...(renderStartMs !== undefined && Number.isFinite(renderStartMs) ? { renderStartMs } : {}),
+    ...(commitTimeMs !== undefined && Number.isFinite(commitTimeMs) ? { commitTimeMs } : {}),
   });
 }
 

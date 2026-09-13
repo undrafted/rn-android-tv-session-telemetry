@@ -155,6 +155,8 @@ mod tests {
                 phase: ReactCommitPhase::Update,
                 actual_duration_ms: 12.5,
                 base_duration_ms: 8.1,
+                render_start_ms: None,
+                commit_time_ms: None,
             }),
             Event::FrameTiming(FrameTimingEvent {
                 sequence: 7,

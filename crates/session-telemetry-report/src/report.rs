@@ -5,11 +5,6 @@ use session_telemetry_analysis::{
 };
 use session_telemetry_protocol::{Event, SessionMetadataEvent};
 
-/// Bumped when the report document's own shape changes (distinct from `ChunkManifest`'s
-/// `SCHEMA_VERSION`, which versions the on-disk session format, not this derived document) —
-/// lets a downstream consumer decide whether it can parse a given report directly.
-pub const REPORT_SCHEMA_VERSION: u32 = 2;
-
 /// A finding plus the raw events between its `sequence_start`/`sequence_end`, sorted by
 /// sequence — self-contained evidence a JSON consumer can read without also fetching the full
 /// session.
@@ -25,7 +20,6 @@ pub struct FindingWithEvidence<'a> {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Report<'a> {
-    pub schema_version: u32,
     pub summary: &'a SessionSummary,
     /// A missing callback cannot distinguish unsupported profiling, an unwrapped root,
     /// inactive capture, or no commits in this recording. Never interpret it as zero work.
@@ -60,7 +54,6 @@ impl<'a> Report<'a> {
         clock_uncertainty_ms: Option<f64>,
     ) -> Report<'a> {
         Report {
-            schema_version: REPORT_SCHEMA_VERSION,
             summary,
             react_commit_capture: if summary.react_commit_count > 0 {
                 "observed"
@@ -106,8 +99,7 @@ pub(crate) fn evidence_for<'a>(finding: &Finding, events: &'a [Event]) -> Vec<&'
 mod tests {
     use super::*;
     use session_telemetry_analysis::{
-        HIGH_LATENCY_FOCUS_CHANGE_DETECTOR, HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION, Severity,
-        Threshold, create_bookmark,
+        HIGH_LATENCY_FOCUS_CHANGE_DETECTOR, Severity, Threshold, create_bookmark,
     };
     use session_telemetry_protocol::{FocusEvent, RemoteInputEvent};
 
@@ -115,7 +107,6 @@ mod tests {
         Finding {
             id: format!("{HIGH_LATENCY_FOCUS_CHANGE_DETECTOR}-0-1"),
             detector: HIGH_LATENCY_FOCUS_CHANGE_DETECTOR,
-            detector_version: HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION,
             severity: Severity::Warning,
             sequence_start: 0,
             sequence_end: 1,
@@ -169,11 +160,24 @@ mod tests {
                 phase: session_telemetry_protocol::ReactCommitPhase::Mount,
                 actual_duration_ms: 20.0,
                 base_duration_ms: 25.0,
+                render_start_ms: Some(10.0),
+                commit_time_ms: Some(40.0),
             },
         )];
         let summary = SessionSummary::from_events(&events);
-        let report = Report::new(&summary, &[], &events, &[], None);
+        let findings = vec![sample_finding()];
+        let report = Report::new(&summary, &findings, &events, &[], None);
         assert_eq!(report.react_commit_capture, "observed");
+        assert!(
+            report
+                .to_json()
+                .unwrap()
+                .contains("\"renderStartMs\": 10.0")
+        );
+        assert!(report.to_json().unwrap().contains("\"commitTimeMs\": 40.0"));
+        let html = crate::render_html(&report);
+        assert!(html.contains("elapsed 30.000 ms (may include pauses)"));
+        assert!(html.contains("20 ms render work"));
         assert!(
             report
                 .to_json()
@@ -200,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_version_and_raw_events_are_carried_but_events_are_not_serialized() {
+    fn raw_events_are_carried_but_not_serialized() {
         let events = sample_events();
         let summary = SessionSummary::from_events(&events);
 
@@ -208,7 +212,7 @@ mod tests {
         let json = report.to_json().unwrap();
 
         assert_eq!(report.events.len(), 2);
-        assert!(json.contains("\"schemaVersion\": 2"));
+        assert!(!json.contains("schemaVersion"));
         assert!(!json.contains("\"remote-input\""));
     }
 

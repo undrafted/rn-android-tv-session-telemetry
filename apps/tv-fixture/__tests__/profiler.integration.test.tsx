@@ -61,9 +61,15 @@ it('records mount and updates through the native writer without application Prof
     phase: 'mount',
     actualDurationMs: expect.any(Number),
     baseDurationMs: expect.any(Number),
+    renderStartMs: expect.any(Number),
+    commitTimeMs: expect.any(Number),
   });
   await act(() => renderer!.root.findByType('button').props.onClick());
   expect(commits().map(event => event.phase)).toEqual(['mount', 'update']);
+  for (const event of commits()) {
+    expect(event.renderStartMs).toBeLessThanOrEqual(event.commitTimeMs!);
+    expect(event.commitTimeMs).toBeLessThanOrEqual(event.timestamp);
+  }
   expect(renderer!.root.findByType('button').children).toEqual([
     'value',
     ':',

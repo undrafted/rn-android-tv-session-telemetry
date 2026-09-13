@@ -4,37 +4,27 @@ use session_telemetry_protocol::Event;
 use std::collections::HashMap;
 
 pub const HIGH_LATENCY_FOCUS_CHANGE_DETECTOR: &str = "high-latency-focus-change";
-pub const HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION: u32 = 1;
 
 pub const HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR: &str = "high-latency-visible-update";
-pub const HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR_VERSION: u32 = 1;
 
 pub const REPEATED_REDUX_DISPATCH_DETECTOR: &str = "repeated-redux-dispatch";
-pub const REPEATED_REDUX_DISPATCH_DETECTOR_VERSION: u32 = 1;
 
 pub const JS_STALL_DURING_INTERACTION_DETECTOR: &str = "js-stall-during-interaction";
-pub const JS_STALL_DURING_INTERACTION_DETECTOR_VERSION: u32 = 1;
 
 pub const REPEATED_NETWORK_REQUEST_DETECTOR: &str = "repeated-network-request";
-pub const REPEATED_NETWORK_REQUEST_DETECTOR_VERSION: u32 = 1;
 
 pub const REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR: &str =
     "react-commit-overlapping-delayed-frame";
-pub const REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR_VERSION: u32 = 1;
 
 pub const NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR: &str =
     "network-completion-followed-by-commit";
-pub const NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR_VERSION: u32 = 1;
 
 pub const EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR: &str =
     "excessive-commits-during-rapid-focus-movement";
-pub const EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR_VERSION: u32 = 1;
 
 pub const REPEATED_SELECTOR_RECOMPUTATION_DETECTOR: &str = "repeated-selector-recomputation";
-pub const REPEATED_SELECTOR_RECOMPUTATION_DETECTOR_VERSION: u32 = 1;
 
 pub const UNSTABLE_SELECTOR_REFERENCE_DETECTOR: &str = "unstable-selector-reference";
-pub const UNSTABLE_SELECTOR_REFERENCE_DETECTOR_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -52,7 +42,7 @@ pub struct Threshold {
     pub value: f64,
 }
 
-/// A finding: which detector produced it, at what version, how severe, the exact sequence
+/// A finding: which detector produced it, how severe, the exact sequence
 /// range it covers, the measured value, the threshold(s) it crossed, and a plain-language
 /// summary. Loss/uncertainty disclosure lives at the report level
 /// (`session_telemetry_report::Report::clock_uncertainty_ms`, `SessionSummary::loss_count`), not
@@ -65,7 +55,6 @@ pub struct Finding {
     /// Stable across re-analysis of the same session: `"{detector}-{sequence_start}-{sequence_end}"`.
     pub id: String,
     pub detector: &'static str,
-    pub detector_version: u32,
     pub severity: Severity,
     pub sequence_start: u64,
     pub sequence_end: u64,
@@ -112,7 +101,6 @@ pub fn detect_high_latency_focus_changes(windows: &[InteractionWindow]) -> Vec<F
                     sequence_end,
                 ),
                 detector: HIGH_LATENCY_FOCUS_CHANGE_DETECTOR,
-                detector_version: HIGH_LATENCY_FOCUS_CHANGE_DETECTOR_VERSION,
                 severity,
                 sequence_start,
                 sequence_end,
@@ -170,7 +158,6 @@ pub fn detect_high_latency_visible_updates(windows: &[InteractionWindow]) -> Vec
                     sequence_end,
                 ),
                 detector: HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR,
-                detector_version: HIGH_LATENCY_VISIBLE_UPDATE_DETECTOR_VERSION,
                 severity,
                 sequence_start,
                 sequence_end,
@@ -221,7 +208,6 @@ pub fn detect_repeated_redux_dispatches(windows: &[InteractionWindow]) -> Vec<Fi
             findings.push(Finding {
                 id: finding_id(REPEATED_REDUX_DISPATCH_DETECTOR, sequence_start, sequence_end),
                 detector: REPEATED_REDUX_DISPATCH_DETECTOR,
-                detector_version: REPEATED_REDUX_DISPATCH_DETECTOR_VERSION,
                 severity: Severity::Warning,
                 sequence_start,
                 sequence_end,
@@ -271,7 +257,6 @@ pub fn detect_js_stalls_overlapping_interactions(windows: &[InteractionWindow]) 
                     sequence_end,
                 ),
                 detector: JS_STALL_DURING_INTERACTION_DETECTOR,
-                detector_version: JS_STALL_DURING_INTERACTION_DETECTOR_VERSION,
                 severity,
                 sequence_start,
                 sequence_end,
@@ -336,7 +321,6 @@ pub fn detect_repeated_network_requests(windows: &[InteractionWindow]) -> Vec<Fi
                     sequence_end,
                 ),
                 detector: REPEATED_NETWORK_REQUEST_DETECTOR,
-                detector_version: REPEATED_NETWORK_REQUEST_DETECTOR_VERSION,
                 severity: Severity::Warning,
                 sequence_start,
                 sequence_end,
@@ -362,10 +346,9 @@ pub fn detect_repeated_network_requests(windows: &[InteractionWindow]) -> Vec<Fi
     findings
 }
 
-/// Flags a React commit whose `[timestamp - actualDurationMs, timestamp]` span overlaps a
-/// delayed frame's `[timestamp - durationMs, timestamp]` span within the same interaction
-/// window — a commit that's plausibly the actual cause of that frame running long, not just
-/// coincidentally nearby in time.
+/// Compares React's elapsed render-to-commit interval with a delayed frame's reported span.
+/// The elapsed interval can contain yields; overlap is correlation, not continuous JS work
+/// or proven causation. Events without valid renderer timestamps are excluded.
 pub fn detect_react_commits_overlapping_delayed_frames(
     windows: &[InteractionWindow],
 ) -> Vec<Finding> {
@@ -378,8 +361,9 @@ pub fn detect_react_commits_overlapping_delayed_frames(
         });
 
         for commit in commits {
-            let commit_start = commit.timestamp - commit.actual_duration_ms;
-            let commit_end = commit.timestamp;
+            let Some((commit_start, commit_end)) = commit.render_interval() else {
+                continue;
+            };
 
             let frames = window.other_events.iter().filter_map(|event| match event {
                 Event::FrameTiming(frame) => Some(frame),
@@ -389,7 +373,13 @@ pub fn detect_react_commits_overlapping_delayed_frames(
             for frame in frames {
                 let frame_start = frame.timestamp - frame.duration_ms;
                 let frame_end = frame.timestamp;
-                if commit_start > frame_end || frame_start > commit_end {
+                if !frame_start.is_finite()
+                    || !frame_end.is_finite()
+                    || frame.duration_ms <= 0.0
+                    || commit_start >= commit_end
+                    || commit_start >= frame_end
+                    || frame_start >= commit_end
+                {
                     continue;
                 }
 
@@ -402,7 +392,6 @@ pub fn detect_react_commits_overlapping_delayed_frames(
                         sequence_end,
                     ),
                     detector: REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR,
-                    detector_version: REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR_VERSION,
                     severity: Severity::Warning,
                     sequence_start,
                     sequence_end,
@@ -410,7 +399,7 @@ pub fn detect_react_commits_overlapping_delayed_frames(
                     unit: "ms",
                     thresholds: Vec::new(),
                     summary: format!(
-                        "A React commit overlapped a delayed frame lasting {:.0}ms.",
+                        "React's render-to-commit interval overlapped a delayed frame lasting {:.0}ms. The elapsed interval may include paused rendering, not continuous JS work. The frame span is estimated from its recorded timestamp and duration. Overlap does not establish causation.",
                         frame.duration_ms
                     ),
                 });
@@ -449,7 +438,6 @@ pub fn detect_network_completions_followed_by_commits(
                     sequence_end,
                 ),
                 detector: NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR,
-                detector_version: NETWORK_COMPLETION_FOLLOWED_BY_COMMIT_DETECTOR_VERSION,
                 severity: Severity::Warning,
                 sequence_start,
                 sequence_end,
@@ -510,8 +498,6 @@ pub fn detect_excessive_commits_during_rapid_focus_movement(
                         sequence_end,
                     ),
                     detector: EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR,
-                    detector_version:
-                        EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR_VERSION,
                     severity: Severity::Warning,
                     sequence_start,
                     sequence_end,
@@ -577,7 +563,6 @@ pub fn detect_repeated_selector_recomputation(windows: &[InteractionWindow]) -> 
                     sequence_end,
                 ),
                 detector: REPEATED_SELECTOR_RECOMPUTATION_DETECTOR,
-                detector_version: REPEATED_SELECTOR_RECOMPUTATION_DETECTOR_VERSION,
                 severity: Severity::Warning,
                 sequence_start,
                 sequence_end,
@@ -635,7 +620,6 @@ pub fn detect_unstable_selector_references(windows: &[InteractionWindow]) -> Vec
                     sequence_end,
                 ),
                 detector: UNSTABLE_SELECTOR_REFERENCE_DETECTOR,
-                detector_version: UNSTABLE_SELECTOR_REFERENCE_DETECTOR_VERSION,
                 severity: Severity::Warning,
                 sequence_start,
                 sequence_end,
@@ -996,6 +980,8 @@ mod tests {
             phase: session_telemetry_protocol::ReactCommitPhase::Update,
             actual_duration_ms,
             base_duration_ms: actual_duration_ms,
+            render_start_ms: None,
+            commit_time_ms: None,
         })
     }
 
@@ -1007,25 +993,91 @@ mod tests {
         })
     }
 
+    fn timed_commit(observed: f64, start: Option<f64>, end: Option<f64>) -> Event {
+        let Event::ReactCommit(mut event) = react_commit(1, observed, 5.0) else {
+            unreachable!()
+        };
+        event.render_start_ms = start;
+        event.commit_time_ms = end;
+        Event::ReactCommit(event)
+    }
+
     #[test]
-    fn an_overlapping_commit_and_delayed_frame_is_flagged() {
-        // Commit spans [90, 100]; frame spans [95, 130] - they overlap.
+    fn elapsed_render_interval_includes_yields_without_claiming_continuous_work() {
+        // Only 5ms render work across [10, 100]. A frame at [40, 80] overlaps that
+        // elapsed interval even though the former [105, 110] estimate misses it.
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                timed_commit(110.0, Some(10.0), Some(100.0)),
+                frame_timing(2, 80.0, 40.0),
+            ],
+        );
+        let findings = detect_react_commits_overlapping_delayed_frames(&[window]);
+        assert_eq!(findings.len(), 1);
+
+        assert!(findings[0].summary.contains("paused rendering"));
+        assert!(findings[0].summary.contains("does not establish causation"));
+    }
+
+    #[test]
+    fn callback_delay_does_not_shift_the_renderer_interval() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                timed_commit(200.0, Some(10.0), Some(100.0)),
+                frame_timing(2, 200.0, 35.0),
+            ],
+        );
+        assert!(detect_react_commits_overlapping_delayed_frames(&[window]).is_empty());
+    }
+
+    #[test]
+    fn invalid_or_incomplete_renderer_timestamps_do_not_fall_back_to_estimates() {
+        for (start, end) in [
+            (Some(150.0), Some(100.0)),
+            (Some(0.0), None),
+            (None, Some(100.0)),
+            (Some(f64::NAN), Some(100.0)),
+            (Some(-10.0), Some(100.0)),
+            (Some(10.0), Some(300.0)),
+            (Some(100.0), Some(100.0)),
+        ] {
+            let window = window_at(
+                0,
+                0.0,
+                vec![
+                    timed_commit(200.0, start, end),
+                    frame_timing(2, 200.0, 150.0),
+                ],
+            );
+            assert!(detect_react_commits_overlapping_delayed_frames(&[window]).is_empty());
+        }
+    }
+
+    #[test]
+    fn merely_touching_intervals_do_not_overlap() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                timed_commit(100.0, Some(10.0), Some(100.0)),
+                frame_timing(2, 135.0, 35.0),
+            ],
+        );
+        assert!(detect_react_commits_overlapping_delayed_frames(&[window]).is_empty());
+    }
+
+    #[test]
+    fn missing_renderer_timestamps_do_not_infer_overlap() {
         let window = window_at(
             0,
             0.0,
             vec![react_commit(1, 100.0, 10.0), frame_timing(2, 130.0, 35.0)],
         );
-
-        let findings = detect_react_commits_overlapping_delayed_frames(&[window]);
-
-        assert_eq!(findings.len(), 1);
-        assert_eq!(
-            findings[0].detector,
-            REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR
-        );
-        assert_eq!(findings[0].sequence_start, 1);
-        assert_eq!(findings[0].sequence_end, 2);
-        assert_eq!(findings[0].value, 35.0);
+        assert!(detect_react_commits_overlapping_delayed_frames(&[window]).is_empty());
     }
 
     #[test]

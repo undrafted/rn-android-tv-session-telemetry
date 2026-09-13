@@ -133,6 +133,27 @@ pub struct ReactCommitEvent {
     pub phase: ReactCommitPhase,
     pub actual_duration_ms: f64,
     pub base_duration_ms: f64,
+    /// Optional for older chunks. Omit absent fields when reserializing so their checksums
+    /// remain valid. React's elapsed render interval can contain pauses, unlike render work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_start_ms: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_time_ms: Option<f64>,
+}
+
+impl ReactCommitEvent {
+    /// Renderer timestamps share the JS monotonic clock. Malformed or incomplete pairs are
+    /// unavailable; do not substitute accumulated render work for elapsed time here.
+    pub fn render_interval(&self) -> Option<(f64, f64)> {
+        let (start, end) = (self.render_start_ms?, self.commit_time_ms?);
+        (start.is_finite()
+            && end.is_finite()
+            && start >= 0.0
+            && end >= start
+            && self.timestamp.is_finite()
+            && end <= self.timestamp)
+            .then_some((start, end))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -248,6 +269,8 @@ mod tests {
                 phase: ReactCommitPhase::NestedUpdate,
                 actual_duration_ms: 12.5,
                 base_duration_ms: 8.1,
+                render_start_ms: None,
+                commit_time_ms: None,
             })
         );
     }
@@ -338,6 +361,8 @@ mod tests {
                 phase: ReactCommitPhase::NestedUpdate,
                 actual_duration_ms: 12.5,
                 base_duration_ms: 8.1,
+                render_start_ms: None,
+                commit_time_ms: None,
             }),
             Event::FrameTiming(FrameTimingEvent {
                 sequence: 7,

@@ -57,6 +57,10 @@ export interface ReactCommitEvent {
   phase: 'mount' | 'update' | 'nested-update';
   actualDurationMs: number;
   baseDurationMs: number;
+  // React's monotonic render-start and commit timestamps, not callback observation time.
+  // The elapsed interval can contain yields; actualDurationMs remains render work only.
+  renderStartMs?: number;
+  commitTimeMs?: number;
 }
 
 export interface FrameTimingEvent {

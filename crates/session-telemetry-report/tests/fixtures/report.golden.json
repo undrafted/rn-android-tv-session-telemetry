@@ -1,5 +1,4 @@
 {
-  "schemaVersion": 2,
   "summary": {
     "eventCount": 2,
     "remoteInputCount": 1,
@@ -27,7 +26,6 @@
     {
       "id": "high-latency-focus-change-0-1",
       "detector": "high-latency-focus-change",
-      "detectorVersion": 1,
       "severity": "warning",
       "sequenceStart": 0,
       "sequenceEnd": 1,

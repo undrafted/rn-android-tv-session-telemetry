@@ -10,7 +10,7 @@ flowchart TD
     Selector["Redux selector invocations<br/>via telemetrySelector() wrapper<br/>(transparent passthrough)"] --> Timeline
     Network["Network requests<br/>automatic at install(): RN fetch + XHR clients<br/>shared XHR boundary, metadata only"] --> Timeline
     JSStall["JS stalls<br/>automatic at install(): one bounded timer<br/>monotonic overshoot heuristic<br/>50ms interval / threshold by default"] --> Timeline
-    ReactCommit["React commits<br/>withTelemetryRoot at root registration<br/>profiling Fabric renderer<br/>render work per committed tree, not paint timing"] --> Timeline
+    ReactCommit["React commits<br/>withTelemetryRoot at root registration<br/>profiling Fabric renderer<br/>render work + renderStartMs / commitTimeMs<br/>elapsed interval may include pauses"] --> Timeline
     FrameTiming["Android frame timing<br/>via native FrameMetrics listener"] --> Timeline
 
     ClockSync["Clock-sync samples<br/>periodic, piggybacked on other<br/>event pushes (~30s) + once at install()"] --> ClockMapping["Clock mapping (ClockMap)<br/>fits offset + scale from samples"]
