@@ -19,6 +19,7 @@ pub struct SessionSummary {
     pub clock_sync_count: usize,
     pub visible_update_count: usize,
     pub session_metadata_count: usize,
+    pub selector_count: usize,
     /// The chunk's own `ChunkManifest::loss_count` — not derivable from `events` alone (a lost
     /// event is, by definition, not among them), so this defaults to `0` here and the caller
     /// (`main.rs`, which has the manifest) sets it explicitly after construction. Always `0`
@@ -46,6 +47,7 @@ impl SessionSummary {
             clock_sync_count: 0,
             visible_update_count: 0,
             session_metadata_count: 0,
+            selector_count: 0,
             loss_count: 0,
             sequence_start: None,
             sequence_end: None,
@@ -66,6 +68,7 @@ impl SessionSummary {
                 Event::ClockSync(_) => summary.clock_sync_count += 1,
                 Event::VisibleUpdate(_) => summary.visible_update_count += 1,
                 Event::SessionMetadata(_) => summary.session_metadata_count += 1,
+                Event::Selector(_) => summary.selector_count += 1,
             }
 
             let sequence = event.sequence();
@@ -186,6 +189,7 @@ mod tests {
         assert_eq!(summary.frame_timing_count, 1);
         assert_eq!(summary.visible_update_count, 0);
         assert_eq!(summary.session_metadata_count, 0);
+        assert_eq!(summary.selector_count, 0);
         assert_eq!(summary.sequence_start, Some(0));
         assert_eq!(summary.sequence_end, Some(7));
         assert_eq!(summary.timestamp_start, Some(0.0));
@@ -229,6 +233,22 @@ mod tests {
 
         assert_eq!(summary.visible_update_count, 1);
         assert_eq!(summary.session_metadata_count, 1);
+    }
+
+    #[test]
+    fn counts_selector_events() {
+        let events = vec![Event::Selector(session_telemetry_protocol::SelectorEvent {
+            sequence: 0,
+            timestamp: 0.0,
+            selector_id: "catalog/selectVisibleItemIds".to_string(),
+            duration_ms: 0.5,
+            inputs_changed: true,
+            result_changed: true,
+        })];
+
+        let summary = SessionSummary::from_events(&events);
+
+        assert_eq!(summary.selector_count, 1);
     }
 
     #[test]

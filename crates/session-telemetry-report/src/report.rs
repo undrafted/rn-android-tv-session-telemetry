@@ -1,6 +1,8 @@
 use crate::summary::SessionSummary;
 use serde::Serialize;
-use session_telemetry_analysis::{Finding, QaBookmark, session_metadata_from_events};
+use session_telemetry_analysis::{
+    Finding, QaBookmark, SelectorStats, selector_stats, session_metadata_from_events,
+};
 use session_telemetry_protocol::{Event, SessionMetadataEvent};
 
 /// Bumped when the report document's own shape changes (distinct from `ChunkManifest`'s
@@ -33,6 +35,9 @@ pub struct Report<'a> {
     /// library version, not an error.
     pub device_metadata: Option<&'a SessionMetadataEvent>,
     pub findings: Vec<FindingWithEvidence<'a>>,
+    /// Per-selector aggregate stats across the whole session — see `SelectorStats`'s own doc
+    /// comment. Empty when no selector was instrumented, not an error.
+    pub selector_stats: Vec<SelectorStats>,
     pub bookmarks: &'a [QaBookmark],
     /// The full raw session, kept off the wire (`#[serde(skip)]`) so the JSON document stays
     /// bounded regardless of session length — consistent with this codebase's summary-first
@@ -63,6 +68,7 @@ impl<'a> Report<'a> {
                     evidence: evidence_for(finding, events),
                 })
                 .collect(),
+            selector_stats: selector_stats(events),
             bookmarks,
             events,
         }
@@ -184,6 +190,27 @@ mod tests {
         let report = Report::new(&summary, &[], &events, &[], None);
 
         assert_eq!(report.device_metadata, None);
+    }
+
+    #[test]
+    fn carries_aggregated_selector_stats() {
+        let events = vec![Event::Selector(session_telemetry_protocol::SelectorEvent {
+            sequence: 0,
+            timestamp: 0.0,
+            selector_id: "catalog/selectVisibleItemIds".to_string(),
+            duration_ms: 0.5,
+            inputs_changed: true,
+            result_changed: true,
+        })];
+        let summary = SessionSummary::from_events(&events);
+
+        let report = Report::new(&summary, &[], &events, &[], None);
+
+        assert_eq!(report.selector_stats.len(), 1);
+        assert_eq!(
+            report.selector_stats[0].selector_id,
+            "catalog/selectVisibleItemIds"
+        );
     }
 
     #[test]

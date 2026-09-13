@@ -4,6 +4,7 @@ mod bookmark;
 mod clock;
 mod detector;
 mod interaction;
+mod selector_stats;
 mod session_metadata;
 
 pub use bookmark::{QaBookmark, create_bookmark};
@@ -19,12 +20,16 @@ pub use detector::{
     REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR,
     REACT_COMMIT_OVERLAPPING_DELAYED_FRAME_DETECTOR_VERSION, REPEATED_NETWORK_REQUEST_DETECTOR,
     REPEATED_NETWORK_REQUEST_DETECTOR_VERSION, REPEATED_REDUX_DISPATCH_DETECTOR,
-    REPEATED_REDUX_DISPATCH_DETECTOR_VERSION, Severity, Threshold,
+    REPEATED_REDUX_DISPATCH_DETECTOR_VERSION, REPEATED_SELECTOR_RECOMPUTATION_DETECTOR,
+    REPEATED_SELECTOR_RECOMPUTATION_DETECTOR_VERSION, Severity, Threshold,
+    UNSTABLE_SELECTOR_REFERENCE_DETECTOR, UNSTABLE_SELECTOR_REFERENCE_DETECTOR_VERSION,
     detect_excessive_commits_during_rapid_focus_movement, detect_high_latency_focus_changes,
     detect_high_latency_visible_updates, detect_js_stalls_overlapping_interactions,
     detect_network_completions_followed_by_commits,
     detect_react_commits_overlapping_delayed_frames, detect_repeated_network_requests,
-    detect_repeated_redux_dispatches,
+    detect_repeated_redux_dispatches, detect_repeated_selector_recomputation,
+    detect_unstable_selector_references,
 };
 pub use interaction::{InteractionWindow, build_interaction_windows};
+pub use selector_stats::{SelectorStats, selector_stats};
 pub use session_metadata::session_metadata_from_events;

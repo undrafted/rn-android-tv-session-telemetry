@@ -18,6 +18,7 @@ pub enum Event {
     ClockSync(ClockSyncEvent),
     VisibleUpdate(VisibleUpdateEvent),
     SessionMetadata(SessionMetadataEvent),
+    Selector(SelectorEvent),
 }
 
 impl Event {
@@ -37,6 +38,7 @@ impl Event {
             Event::ClockSync(event) => event.sequence,
             Event::VisibleUpdate(event) => event.sequence,
             Event::SessionMetadata(event) => event.sequence,
+            Event::Selector(event) => event.sequence,
         }
     }
 
@@ -56,6 +58,7 @@ impl Event {
             Event::ClockSync(event) => event.timestamp,
             Event::VisibleUpdate(event) => event.timestamp,
             Event::SessionMetadata(event) => event.timestamp,
+            Event::Selector(event) => event.timestamp,
         }
     }
 }
@@ -186,6 +189,25 @@ pub struct SessionMetadataEvent {
     pub os_version: String,
     pub app_version: Option<String>,
     pub build_type: Option<String>,
+}
+
+/// One invocation of an application-opted-in selector, from `telemetrySelector`
+/// (`packages/redux/src/index.ts`) — a transparent passthrough wrapper, so this never affects
+/// the selector's own memoization semantics. `inputs_changed` compares this call's arguments
+/// against the previous call's by reference (`Object.is` per position); `result_changed`
+/// compares the returned reference the same way. `inputs_changed == false && result_changed ==
+/// true` is the interesting case: the selector was called with the exact same arguments as last
+/// time but returned a different object/array reference anyway — a broken/unstable selector,
+/// not a real state change. Metadata only: never the selector's arguments or its result value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectorEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub selector_id: String,
+    pub duration_ms: f64,
+    pub inputs_changed: bool,
+    pub result_changed: bool,
 }
 
 #[cfg(test)]
@@ -340,6 +362,14 @@ mod tests {
                 app_version: Some("1.2.3".to_string()),
                 build_type: Some("profiling".to_string()),
             }),
+            Event::Selector(SelectorEvent {
+                sequence: 11,
+                timestamp: 12.0,
+                selector_id: "catalog/selectVisibleItemIds".to_string(),
+                duration_ms: 0.8,
+                inputs_changed: false,
+                result_changed: true,
+            }),
         ];
 
         for event in events {
@@ -385,6 +415,27 @@ mod tests {
                 build_type: None,
             })
         );
+    }
+
+    #[test]
+    fn decodes_a_selector_event_exactly_as_the_js_library_serializes_it() {
+        let json = r#"{"type":"selector","sequence":3,"timestamp":50.0,"selectorId":"catalog/selectVisibleItemIds","durationMs":0.8,"inputsChanged":false,"resultChanged":true}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            event,
+            Event::Selector(SelectorEvent {
+                sequence: 3,
+                timestamp: 50.0,
+                selector_id: "catalog/selectVisibleItemIds".to_string(),
+                duration_ms: 0.8,
+                inputs_changed: false,
+                result_changed: true,
+            })
+        );
+        assert_eq!(event.sequence(), 3);
+        assert_eq!(event.timestamp(), 50.0);
     }
 
     #[test]

@@ -20,6 +20,7 @@ export type {
   FrameTimingEvent,
   VisibleUpdateEvent,
   SessionMetadataEvent,
+  SelectorEvent,
 } from './events.js';
 export { FocusableView, type FocusableViewProps } from './FocusableView.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
@@ -61,6 +62,12 @@ export interface SessionTelemetryApi {
     phase: 'mount' | 'update' | 'nested-update',
     actualDurationMs: number,
     baseDurationMs: number,
+  ): void;
+  recordSelector(
+    selectorId: string,
+    durationMs: number,
+    inputsChanged: boolean,
+    resultChanged: boolean,
   ): void;
   // Temporary: exposes the in-memory buffer until a native chunk writer exists. Not part of
   // the stable V1 API surface.
@@ -341,6 +348,27 @@ function recordReactCommit(
   });
 }
 
+function recordSelector(
+  selectorId: string,
+  durationMs: number,
+  inputsChanged: boolean,
+  resultChanged: boolean,
+): void {
+  if (!installed) {
+    return;
+  }
+  maybeEmitClockSync();
+  pushToBufferAndNative({
+    type: 'selector',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    selectorId,
+    durationMs,
+    inputsChanged,
+    resultChanged,
+  });
+}
+
 function getBufferedEvents(): readonly SessionTelemetryEvent[] {
   return buffer;
 }
@@ -360,6 +388,7 @@ export const SessionTelemetry: SessionTelemetryApi = {
   recordJsStall,
   recordFrameTiming,
   recordReactCommit,
+  recordSelector,
   getBufferedEvents,
   getDroppedEventCount,
 };

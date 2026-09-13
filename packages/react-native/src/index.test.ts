@@ -198,6 +198,31 @@ describe('recordFrameTiming', () => {
   });
 });
 
+describe('recordSelector', () => {
+  it('records the selector id, duration, and change flags', () => {
+    SessionTelemetry.install();
+    SessionTelemetry.recordSelector('catalog/selectVisibleItemIds', 0.8, false, true);
+
+    expect(applicationEvents()).toEqual([
+      expect.objectContaining({
+        type: 'selector',
+        selectorId: 'catalog/selectVisibleItemIds',
+        durationMs: 0.8,
+        inputsChanged: false,
+        resultChanged: true,
+      }),
+    ]);
+  });
+
+  it('is a no-op before install', () => {
+    const before = SessionTelemetry.getBufferedEvents().length;
+
+    SessionTelemetry.recordSelector('should-be-dropped', 1, true, true);
+
+    expect(SessionTelemetry.getBufferedEvents()).toHaveLength(before);
+  });
+});
+
 describe('bounded buffer', () => {
   it('evicts the oldest event once maxBufferedEvents is reached', () => {
     SessionTelemetry.install({ maxBufferedEvents: 2 });

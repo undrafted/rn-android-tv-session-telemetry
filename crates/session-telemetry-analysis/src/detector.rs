@@ -30,6 +30,12 @@ pub const EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR: &str =
     "excessive-commits-during-rapid-focus-movement";
 pub const EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR_VERSION: u32 = 1;
 
+pub const REPEATED_SELECTOR_RECOMPUTATION_DETECTOR: &str = "repeated-selector-recomputation";
+pub const REPEATED_SELECTOR_RECOMPUTATION_DETECTOR_VERSION: u32 = 1;
+
+pub const UNSTABLE_SELECTOR_REFERENCE_DETECTOR: &str = "unstable-selector-reference";
+pub const UNSTABLE_SELECTOR_REFERENCE_DETECTOR_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -534,6 +540,122 @@ pub fn detect_excessive_commits_during_rapid_focus_movement(
     findings
 }
 
+/// Flags interaction windows where the same instrumented selector was invoked more than once
+/// with unchanged inputs (`inputs_changed == false` each time) — evidence the caller isn't
+/// de-duplicating/memoizing its own calls, so the selector does real work repeatedly for no
+/// reason even if its own result stays stable. The repeat threshold matches
+/// `detect_repeated_redux_dispatches`'s own reasoning — a starting guess, not a measured number.
+pub fn detect_repeated_selector_recomputation(windows: &[InteractionWindow]) -> Vec<Finding> {
+    const REPEAT_THRESHOLD: usize = 2;
+
+    let mut findings = Vec::new();
+
+    for window in windows {
+        let mut by_selector_id: HashMap<&str, Vec<u64>> = HashMap::new();
+        for event in &window.other_events {
+            if let Event::Selector(selector) = event
+                && !selector.inputs_changed
+            {
+                by_selector_id
+                    .entry(selector.selector_id.as_str())
+                    .or_default()
+                    .push(selector.sequence);
+            }
+        }
+
+        for sequences in by_selector_id.into_values() {
+            if sequences.len() < REPEAT_THRESHOLD {
+                continue;
+            }
+            let sequence_start = window.input.sequence;
+            let sequence_end = *sequences.iter().max().expect("non-empty");
+            let count = sequences.len();
+            findings.push(Finding {
+                id: finding_id(
+                    REPEATED_SELECTOR_RECOMPUTATION_DETECTOR,
+                    sequence_start,
+                    sequence_end,
+                ),
+                detector: REPEATED_SELECTOR_RECOMPUTATION_DETECTOR,
+                detector_version: REPEATED_SELECTOR_RECOMPUTATION_DETECTOR_VERSION,
+                severity: Severity::Warning,
+                sequence_start,
+                sequence_end,
+                value: count as f64,
+                unit: "invocations",
+                thresholds: vec![Threshold {
+                    name: "repeatThreshold",
+                    value: REPEAT_THRESHOLD as f64,
+                }],
+                summary: format!(
+                    "An instrumented selector was invoked {count} times with unchanged inputs within one interaction."
+                ),
+            });
+        }
+    }
+
+    findings
+}
+
+/// Flags an instrumented selector that returned a different reference despite unchanged inputs
+/// (`inputs_changed == false && result_changed == true` — a broken/unstable selector, not a
+/// real state change) whose window also contains a burst of React commits, evidence the
+/// unstable reference is plausibly the actual cause of those extra re-renders rather than just
+/// coincidentally nearby. The commit threshold mirrors
+/// `detect_excessive_commits_during_rapid_focus_movement`'s own placeholder reasoning.
+pub fn detect_unstable_selector_references(windows: &[InteractionWindow]) -> Vec<Finding> {
+    const COMMIT_THRESHOLD: usize = 2;
+
+    let mut findings = Vec::new();
+
+    for window in windows {
+        let commit_count = window
+            .other_events
+            .iter()
+            .filter(|event| matches!(event, Event::ReactCommit(_)))
+            .count();
+        if commit_count < COMMIT_THRESHOLD {
+            continue;
+        }
+
+        for event in &window.other_events {
+            let Event::Selector(selector) = event else {
+                continue;
+            };
+            if selector.inputs_changed || !selector.result_changed {
+                continue;
+            }
+
+            let sequence_start = window.input.sequence;
+            let sequence_end = selector.sequence;
+            findings.push(Finding {
+                id: finding_id(
+                    UNSTABLE_SELECTOR_REFERENCE_DETECTOR,
+                    sequence_start,
+                    sequence_end,
+                ),
+                detector: UNSTABLE_SELECTOR_REFERENCE_DETECTOR,
+                detector_version: UNSTABLE_SELECTOR_REFERENCE_DETECTOR_VERSION,
+                severity: Severity::Warning,
+                sequence_start,
+                sequence_end,
+                value: commit_count as f64,
+                unit: "commits",
+                thresholds: vec![Threshold {
+                    name: "commitThreshold",
+                    value: COMMIT_THRESHOLD as f64,
+                }],
+                summary: format!(
+                    "Selector \"{}\" returned a new reference with unchanged inputs, overlapping {commit_count} React commits.",
+                    selector.selector_id
+                ),
+            });
+        }
+    }
+
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1007,5 +1129,135 @@ mod tests {
             detect_excessive_commits_during_rapid_focus_movement(&windows),
             vec![]
         );
+    }
+
+    fn selector(
+        sequence: u64,
+        selector_id: &str,
+        inputs_changed: bool,
+        result_changed: bool,
+    ) -> Event {
+        Event::Selector(session_telemetry_protocol::SelectorEvent {
+            sequence,
+            timestamp: sequence as f64,
+            selector_id: selector_id.to_string(),
+            duration_ms: 0.5,
+            inputs_changed,
+            result_changed,
+        })
+    }
+
+    #[test]
+    fn a_selector_invoked_twice_with_unchanged_inputs_is_flagged() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                selector(1, "catalog/selectVisibleItemIds", false, false),
+                selector(2, "catalog/selectVisibleItemIds", false, false),
+            ],
+        );
+
+        let findings = detect_repeated_selector_recomputation(&[window]);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].detector,
+            REPEATED_SELECTOR_RECOMPUTATION_DETECTOR
+        );
+        assert_eq!(findings[0].value, 2.0);
+        assert_eq!(findings[0].unit, "invocations");
+    }
+
+    #[test]
+    fn a_selector_invocation_with_changed_inputs_does_not_count_as_a_recomputation() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                selector(1, "catalog/selectVisibleItemIds", true, true),
+                selector(2, "catalog/selectVisibleItemIds", true, true),
+            ],
+        );
+
+        assert_eq!(detect_repeated_selector_recomputation(&[window]), vec![]);
+    }
+
+    #[test]
+    fn different_selectors_are_not_conflated_as_repeated() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                selector(1, "catalog/selectVisibleItemIds", false, false),
+                selector(2, "catalog/selectSortOrder", false, false),
+            ],
+        );
+
+        assert_eq!(detect_repeated_selector_recomputation(&[window]), vec![]);
+    }
+
+    #[test]
+    fn an_unstable_selector_overlapping_repeated_commits_is_flagged() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                selector(1, "catalog/selectVisibleItemIds", false, true),
+                react_commit(2, 5.0, 1.0),
+                react_commit(3, 10.0, 1.0),
+            ],
+        );
+
+        let findings = detect_unstable_selector_references(&[window]);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].detector, UNSTABLE_SELECTOR_REFERENCE_DETECTOR);
+        assert_eq!(findings[0].sequence_end, 1);
+        assert_eq!(findings[0].value, 2.0);
+    }
+
+    #[test]
+    fn an_unstable_selector_without_enough_overlapping_commits_is_not_flagged() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                selector(1, "catalog/selectVisibleItemIds", false, true),
+                react_commit(2, 5.0, 1.0),
+            ],
+        );
+
+        assert_eq!(detect_unstable_selector_references(&[window]), vec![]);
+    }
+
+    #[test]
+    fn a_stable_selector_result_is_not_flagged_even_with_repeated_commits() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                selector(1, "catalog/selectVisibleItemIds", false, false),
+                react_commit(2, 5.0, 1.0),
+                react_commit(3, 10.0, 1.0),
+            ],
+        );
+
+        assert_eq!(detect_unstable_selector_references(&[window]), vec![]);
+    }
+
+    #[test]
+    fn a_new_result_from_changed_inputs_is_not_flagged_as_unstable() {
+        let window = window_at(
+            0,
+            0.0,
+            vec![
+                selector(1, "catalog/selectVisibleItemIds", true, true),
+                react_commit(2, 5.0, 1.0),
+                react_commit(3, 10.0, 1.0),
+            ],
+        );
+
+        assert_eq!(detect_unstable_selector_references(&[window]), vec![]);
     }
 }

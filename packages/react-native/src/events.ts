@@ -103,6 +103,24 @@ export interface SessionMetadataEvent {
   buildType: string | null;
 }
 
+// One invocation of an application-opted-in selector, from telemetrySelector
+// (packages/redux/src/index.ts) - a transparent passthrough wrapper, so this never affects the
+// selector's own memoization semantics. inputsChanged compares this call's arguments against the
+// previous call's by reference (Object.is per position); resultChanged compares the returned
+// reference the same way. inputsChanged === false && resultChanged === true is the interesting
+// case: the selector was called with the exact same arguments as last time but returned a
+// different object/array reference anyway - a broken/unstable selector, not a real state change.
+// Metadata only: never the selector's arguments or its result value.
+export interface SelectorEvent {
+  type: 'selector';
+  sequence: number;
+  timestamp: number;
+  selectorId: string;
+  durationMs: number;
+  inputsChanged: boolean;
+  resultChanged: boolean;
+}
+
 export type SessionTelemetryEvent =
   | RemoteInputEvent
   | FocusEvent
@@ -114,7 +132,8 @@ export type SessionTelemetryEvent =
   | FrameTimingEvent
   | ClockSyncEvent
   | VisibleUpdateEvent
-  | SessionMetadataEvent;
+  | SessionMetadataEvent
+  | SelectorEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,

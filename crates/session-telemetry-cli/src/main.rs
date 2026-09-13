@@ -9,7 +9,8 @@ use session_telemetry_analysis::{
     detect_high_latency_focus_changes, detect_high_latency_visible_updates,
     detect_js_stalls_overlapping_interactions, detect_network_completions_followed_by_commits,
     detect_react_commits_overlapping_delayed_frames, detect_repeated_network_requests,
-    detect_repeated_redux_dispatches,
+    detect_repeated_redux_dispatches, detect_repeated_selector_recomputation,
+    detect_unstable_selector_references,
 };
 use session_telemetry_cli::{
     Bookmark, BookmarkFile, Cli, Command, RecordMode, ReportFormat, SessionState, format_bookmarks,
@@ -567,6 +568,8 @@ fn collect_findings(chunk: &Chunk) -> Vec<Finding> {
     findings.extend(detect_excessive_commits_during_rapid_focus_movement(
         &windows,
     ));
+    findings.extend(detect_repeated_selector_recomputation(&windows));
+    findings.extend(detect_unstable_selector_references(&windows));
     findings.sort_by_key(|finding| finding.sequence_start);
     findings
 }

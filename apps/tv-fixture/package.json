@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@rn-session-telemetry/react-native": "*",
+    "@rn-session-telemetry/redux": "*",
     "react": "19.2.3",
-    "react-native": "npm:react-native-tvos@0.87.1-0"
+    "react-native": "npm:react-native-tvos@0.87.1-0",
+    "redux": "^5.0.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

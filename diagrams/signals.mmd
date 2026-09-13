@@ -6,7 +6,8 @@ flowchart TD
     Redux["Redux dispatches"] --> Timeline
     Network["Network requests"] --> Timeline
     VisibleUpdate["Visible-update marker"] --> Timeline
-    ReactCommit["React commits"] --> Timeline
+    ReactCommit["React commits<br/>(wired, but never observed on a real<br/>device yet — React's Profiler onRender<br/>doesn't appear to fire in a profiling build)"] --> Timeline
+    Selector["Redux selector invocations"] --> Timeline
     JSStall["JS stalls"] --> Timeline
     FrameTiming["Android frame timing"] --> Timeline
     ClockSync["Clock-sync samples"] --> Timeline

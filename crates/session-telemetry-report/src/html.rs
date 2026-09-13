@@ -1,6 +1,6 @@
 use crate::report::{FindingWithEvidence, Report};
 use crate::summary::SessionSummary;
-use session_telemetry_analysis::{QaBookmark, Severity};
+use session_telemetry_analysis::{QaBookmark, SelectorStats, Severity};
 use session_telemetry_protocol::{Event, ReactCommitPhase, SessionMetadataEvent};
 
 /// Renders a static HTML report from a `Report` — the same structured model `Report::to_json`
@@ -23,6 +23,7 @@ pub fn render_html(report: &Report) -> String {
 {summary_html}
 <h1>Findings</h1>
 {findings_html}
+{selectors_html}
 {bookmarks_html}
 {timeline_html}
 <script>{TIMELINE_FILTER_JS}</script>
@@ -35,6 +36,7 @@ pub fn render_html(report: &Report) -> String {
             report.device_metadata
         ),
         findings_html = render_findings(&report.findings),
+        selectors_html = render_selector_stats(&report.selector_stats),
         bookmarks_html = render_bookmarks(report.bookmarks),
         timeline_html = render_timeline(report.events),
     )
@@ -177,6 +179,38 @@ fn render_evidence_timeline(window_events: &[&Event]) -> String {
     format!("<ol class=\"evidence\">\n{rows}\n</ol>")
 }
 
+/// Per-selector aggregate stats (`Report::selector_stats`) — omitted entirely (no heading) when
+/// no selector was instrumented, same as the bookmarks section isn't forced to exist either.
+fn render_selector_stats(stats: &[SelectorStats]) -> String {
+    if stats.is_empty() {
+        return String::new();
+    }
+
+    let rows = stats
+        .iter()
+        .map(|stat| {
+            format!(
+                "<tr><td>{}</td><td>{}</td><td>{:.1} ms</td><td>{:.1} ms</td><td>{}</td><td>{}</td></tr>",
+                escape_html(&stat.selector_id),
+                stat.invocation_count,
+                stat.total_duration_ms,
+                stat.max_duration_ms,
+                stat.recomputation_count,
+                stat.unstable_result_count,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "<h1>Selectors</h1>\n\
+         <table class=\"selectors\">\n\
+         <thead><tr><th>Selector</th><th>Invocations</th><th>Total duration</th><th>Max duration</th><th>Recomputations</th><th>Unstable results</th></tr></thead>\n\
+         <tbody>\n{rows}\n</tbody>\n\
+         </table>"
+    )
+}
+
 /// QA bookmarks (`session-telemetry mark`), already mapped onto the session's monotonic
 /// timeline via `ClockMap` by the caller — this function only renders them. Omitted entirely
 /// (no heading) when there are none, same as the findings table isn't forced to exist for an
@@ -230,6 +264,7 @@ const EVENT_TYPE_FILTERS: &[(&str, &str)] = &[
     ("clock-sync", "Clock sync"),
     ("visible-update", "Visible update"),
     ("session-metadata", "Session metadata"),
+    ("selector", "Selector"),
 ];
 
 fn event_type_tag(event: &Event) -> &'static str {
@@ -245,6 +280,7 @@ fn event_type_tag(event: &Event) -> &'static str {
         Event::ClockSync(_) => "clock-sync",
         Event::VisibleUpdate(_) => "visible-update",
         Event::SessionMetadata(_) => "session-metadata",
+        Event::Selector(_) => "selector",
     }
 }
 
@@ -369,6 +405,21 @@ fn describe_event(event: &Event) -> String {
             escape_html(&event.device_model),
             escape_html(&event.os_version)
         ),
+        Event::Selector(event) => format!(
+            "Selector: {} ({} ms{}{})",
+            escape_html(&event.selector_id),
+            event.duration_ms,
+            if event.inputs_changed {
+                ""
+            } else {
+                ", inputs unchanged"
+            },
+            if event.result_changed {
+                ", new reference"
+            } else {
+                ""
+            },
+        ),
     }
 }
 
@@ -393,8 +444,8 @@ const CSS: &str = "
   body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; color: #1a1a1a; }
   dl.summary { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
   dl.summary dt { font-weight: 600; }
-  table.findings { border-collapse: collapse; width: 100%; }
-  table.findings th, table.findings td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; }
+  table.findings, table.selectors { border-collapse: collapse; width: 100%; }
+  table.findings th, table.findings td, table.selectors th, table.selectors td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; }
   tr.warning td:first-child { color: #a15c00; }
   tr.critical td:first-child { color: #b3261e; font-weight: 600; }
   tr.evidence-row td { padding: 0 0.6rem 0.75rem 0.6rem; border-bottom: 1px solid #ddd; }

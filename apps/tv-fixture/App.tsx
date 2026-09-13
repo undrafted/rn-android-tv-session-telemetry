@@ -4,38 +4,72 @@
  * Two side-by-side focusable cards used to validate that a remote-control press, the resulting
  * focus transition, and its visible-update confirmation all show up as events — a DPAD_RIGHT/
  * DPAD_LEFT press has somewhere real to move focus to, unlike a single-card screen where no
- * focus change could ever occur. Later grows into a deliberately inefficient demonstration app.
+ * focus change could ever occur. Also wired to a minimal Redux store (store.ts) demonstrating
+ * M7's selector instrumentation. Later grows into a deliberately inefficient demonstration app.
  *
  * @format
  */
 
-import { useState } from 'react';
+import { Profiler, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { FocusableView, SessionTelemetry } from '@rn-session-telemetry/react-native';
+import {
+  FocusableView,
+  SessionTelemetry,
+  onProfilerRender,
+} from '@rn-session-telemetry/react-native';
+import {
+  selectItemCount,
+  selectVisibleItemIds,
+  store,
+  useAppSelector,
+} from './store';
 
-function Card({ id, label, hasTVPreferredFocus }: { id: string; label: string; hasTVPreferredFocus?: boolean }) {
+function Card({
+  id,
+  label,
+  hasTVPreferredFocus,
+}: {
+  id: string;
+  label: string;
+  hasTVPreferredFocus?: boolean;
+}) {
   const [focused, setFocused] = useState(false);
+  // Subscribes to the store via the *stable* selector only — useSyncExternalStore requires its
+  // snapshot to be reference-stable when nothing relevant changed, which selectVisibleItemIds
+  // deliberately isn't (that's the bug this fixture demonstrates). Calling the unstable one
+  // directly, as a plain derived value during render, is exactly how this misuse actually shows
+  // up in real apps: called directly instead of through a properly memoized selector hook.
+  const itemCount = useAppSelector(selectItemCount);
+  const visibleItemIds = selectVisibleItemIds(store.getState());
 
   return (
     <FocusableView
       id={id}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      onFocus={() => setFocused(true)}
+      onFocus={() => {
+        setFocused(true);
+        store.dispatch({ type: 'catalog/cardFocused', targetId: id });
+      }}
       onBlur={() => setFocused(false)}
       onPress={() => SessionTelemetry.mark(`demo:${id}-select`)}
       style={[styles.card, focused && styles.cardFocused]}
     >
       <Text style={styles.label}>{label}</Text>
+      <Text style={styles.detail}>
+        {itemCount} items · {visibleItemIds.length} visible
+      </Text>
     </FocusableView>
   );
 }
 
 function App() {
   return (
-    <View style={styles.container}>
-      <Card id="card-1" label="Press select" hasTVPreferredFocus />
-      <Card id="card-2" label="Or move here" />
-    </View>
+    <Profiler id="App" onRender={onProfilerRender}>
+      <View style={styles.container}>
+        <Card id="card-1" label="Press select" hasTVPreferredFocus />
+        <Card id="card-2" label="Or move here" />
+      </View>
+    </Profiler>
   );
 }
 
@@ -62,6 +96,11 @@ const styles = StyleSheet.create({
   label: {
     color: '#ffffff',
     fontSize: 18,
+  },
+  detail: {
+    color: '#9a9aa8',
+    fontSize: 12,
+    marginTop: 4,
   },
 });
 
