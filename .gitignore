@@ -37,8 +37,7 @@ fixtures/sessions/*.html
 .env
 .env.local
 
-# Local-only planning doc, kept out of the public repo
-plan.md
+/prose/
 
 # Claude Code local settings (per-developer, not shared)
 .claude/settings.local.json
