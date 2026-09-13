@@ -10,7 +10,7 @@ pub fn parse_find_output(output: &str) -> Vec<String> {
         .collect()
 }
 
-fn session_dir_name(path: &str) -> &str {
+fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
@@ -24,12 +24,24 @@ pub fn resolve_session_dir<'a>(requested: &str, available: &'a [String]) -> Opti
     if requested == "latest" {
         return available
             .iter()
-            .max_by_key(|path| session_dir_name(path))
+            .max_by_key(|path| basename(path))
             .map(String::as_str);
     }
     available
         .iter()
-        .find(|path| session_dir_name(path) == requested)
+        .find(|path| basename(path) == requested)
+        .map(String::as_str)
+}
+
+/// Resolves the most recently sealed chunk in a session directory, for `watch` to tail. Chunk
+/// filenames are a zero-padded, monotonically increasing index (`chunk-00000.rnst`,
+/// `chunk-00001.rnst`, ...; see `write_chunk` in session-telemetry-android), so the
+/// lexicographically greatest filename is always the most recent — no remote file timestamps
+/// needed, same trick `resolve_session_dir` uses one level up.
+pub fn resolve_latest_chunk_file(files: &[String]) -> Option<&str> {
+    files
+        .iter()
+        .max_by_key(|path| basename(path))
         .map(String::as_str)
 }
 
@@ -89,5 +101,24 @@ mod tests {
     #[test]
     fn resolve_session_dir_returns_none_for_latest_when_nothing_is_available() {
         assert_eq!(resolve_session_dir("latest", &[]), None);
+    }
+
+    #[test]
+    fn resolve_latest_chunk_file_picks_the_highest_index() {
+        let files = vec![
+            "files/rnst-sessions/1789284955282/chunk-00000.rnst".to_string(),
+            "files/rnst-sessions/1789284955282/chunk-00002.rnst".to_string(),
+            "files/rnst-sessions/1789284955282/chunk-00001.rnst".to_string(),
+        ];
+
+        assert_eq!(
+            resolve_latest_chunk_file(&files),
+            Some("files/rnst-sessions/1789284955282/chunk-00002.rnst")
+        );
+    }
+
+    #[test]
+    fn resolve_latest_chunk_file_returns_none_when_empty() {
+        assert_eq!(resolve_latest_chunk_file(&[]), None);
     }
 }

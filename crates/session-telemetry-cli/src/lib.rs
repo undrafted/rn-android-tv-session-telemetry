@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use session_telemetry_adb::{DeviceInfo, DeviceState};
 use session_telemetry_analysis::{Finding, QaBookmark, Severity};
+use session_telemetry_session::ChunkManifest;
 use std::time::SystemTime;
 
 /// Most subcommands are parsed but not yet implemented — see `main.rs` for which ones actually
@@ -66,6 +67,15 @@ pub enum Command {
     },
     /// Show current recording status.
     Status,
+    /// Tail the active recording's sealed chunks as they land on the device, without waiting
+    /// for `stop`/`pull`. A convenience over the active session's device/package (from `record`)
+    /// — read-only, and never touches the chunk currently being written, so a dropped `watch`
+    /// (or ADB connection) can never affect the recording itself. Ctrl-C to stop watching.
+    Watch {
+        /// How often to poll the device for a newly sealed chunk, in seconds.
+        #[arg(long, default_value_t = 3)]
+        interval_secs: u64,
+    },
     /// Pull a recorded session's .rnst chunks from the device.
     Pull {
         /// The on-device session directory name (a millisecond timestamp) under
@@ -202,6 +212,25 @@ pub fn format_status(state: Option<&SessionState>, now_unix_ms: u64) -> String {
             state.mode.label(),
             state.device,
             format_duration_ms(now_unix_ms.saturating_sub(state.started_at_unix_ms))
+        ),
+    }
+}
+
+/// One line of `session-telemetry watch` output, printed each time a newly sealed chunk is
+/// found (main.rs dedupes across polls by the resolved chunk's remote path, so this doesn't need
+/// to know whether anything actually changed since the last call). Deliberately reports only the
+/// latest sealed chunk's own manifest, not a running total across the whole session — re-reading
+/// every prior chunk on every poll would make `watch`'s device traffic grow with session length,
+/// which defeats the point of a lightweight live view.
+pub fn format_watch_line(chunk_count: usize, manifest: Option<&ChunkManifest>) -> String {
+    match manifest {
+        None => "Waiting for the first chunk to seal...".to_string(),
+        Some(manifest) => format!(
+            "{chunk_count} chunk(s) sealed — latest: {} events (sequence {}-{}, {:.0} ms span)",
+            manifest.event_count,
+            manifest.sequence_start,
+            manifest.sequence_end,
+            manifest.timestamp_end - manifest.timestamp_start,
         ),
     }
 }
@@ -383,6 +412,21 @@ mod tests {
     }
 
     #[test]
+    fn parses_watch_with_its_default_interval() {
+        let cli = Cli::try_parse_from(["session-telemetry", "watch"]).unwrap();
+
+        assert_eq!(cli.command, Command::Watch { interval_secs: 3 });
+    }
+
+    #[test]
+    fn parses_watch_with_a_custom_interval() {
+        let cli =
+            Cli::try_parse_from(["session-telemetry", "watch", "--interval-secs", "10"]).unwrap();
+
+        assert_eq!(cli.command, Command::Watch { interval_secs: 10 });
+    }
+
+    #[test]
     fn rejects_an_unknown_subcommand() {
         assert!(Cli::try_parse_from(["session-telemetry", "not-a-real-command"]).is_err());
     }
@@ -471,6 +515,33 @@ mod tests {
         assert_eq!(
             format_status(Some(&state), state.started_at_unix_ms + 125_000),
             "Recording \"catalog-navigation\" (qa mode) on 192.168.1.40:5555 — 2m 5s elapsed"
+        );
+    }
+
+    #[test]
+    fn format_watch_line_reports_waiting_before_any_chunk_seals() {
+        assert_eq!(
+            format_watch_line(0, None),
+            "Waiting for the first chunk to seal..."
+        );
+    }
+
+    #[test]
+    fn format_watch_line_reports_the_latest_chunk() {
+        let manifest = ChunkManifest {
+            schema_version: 1,
+            sequence_start: 4,
+            sequence_end: 9,
+            timestamp_start: 1_000.0,
+            timestamp_end: 1_214.0,
+            event_count: 6,
+            loss_count: 0,
+            checksum: 0,
+        };
+
+        assert_eq!(
+            format_watch_line(3, Some(&manifest)),
+            "3 chunk(s) sealed — latest: 6 events (sequence 4-9, 214 ms span)"
         );
     }
 

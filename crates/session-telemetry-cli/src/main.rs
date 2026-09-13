@@ -1,7 +1,7 @@
 use clap::Parser;
 use session_telemetry_adb::{
     DeviceState, parse_devices_output, parse_find_output, prune_sealed_sessions_dir,
-    resolve_session_dir,
+    resolve_latest_chunk_file, resolve_session_dir,
 };
 use session_telemetry_analysis::{
     ClockMap, Finding, QaBookmark, build_interaction_windows, clock_sync_samples_from_events,
@@ -14,7 +14,8 @@ use session_telemetry_analysis::{
 use session_telemetry_cli::{
     Bookmark, BookmarkFile, Cli, Command, RecordMode, SessionState, format_bookmarks,
     format_devices, format_findings, format_mark_confirmation, format_record_started,
-    format_status, format_stop_summary, opener_command, resolve_latest_session_file,
+    format_status, format_stop_summary, format_watch_line, opener_command,
+    resolve_latest_session_file,
 };
 use session_telemetry_report::{SessionSummary, render_html};
 use session_telemetry_session::Chunk;
@@ -37,6 +38,7 @@ fn main() {
         Command::Stop => run_stop(),
         Command::Mark { label } => run_mark(&label),
         Command::Status => run_status(),
+        Command::Watch { interval_secs } => run_watch(interval_secs),
         Command::Analyze { session } => run_analyze(&session),
         Command::Report { session, open } => run_report(&session, open),
         Command::Pull {
@@ -292,6 +294,79 @@ fn run_status() {
         "{}",
         format_status(load_session_state().as_ref(), now_unix_ms())
     );
+}
+
+/// Tails the active recording's sealed chunks without waiting for `stop`/`pull` — the "optional
+/// live event connection" plan.md describes, built as a read-only poll over the same `run-as
+/// find`/`cat` primitives `pull` already uses, rather than a socket. Never touches the chunk
+/// currently being written (only ever `resolve_latest_chunk_file`, which only sees sealed
+/// files), so a dropped `watch` process or ADB connection can't affect the recording itself —
+/// completed chunks stay the recovery source of truth regardless, same as `pull`.
+fn run_watch(interval_secs: u64) {
+    let Some(state) = load_session_state() else {
+        eprintln!("No active recording. Run `session-telemetry record` first.");
+        exit(1);
+    };
+    let interval = interval_secs.max(1);
+
+    println!(
+        "Watching \"{}\" on {} (polling every {interval}s, Ctrl-C to stop)...",
+        state.name, state.device
+    );
+
+    let mut last_chunk_path: Option<String> = None;
+    let mut printed_waiting = false;
+
+    loop {
+        if load_session_state().is_none() {
+            println!("Recording stopped.");
+            return;
+        }
+
+        let session_dirs = find_on_device(
+            &state.device,
+            &state.package,
+            &[
+                "files/rnst-sessions",
+                "-mindepth",
+                "1",
+                "-maxdepth",
+                "1",
+                "-type",
+                "d",
+            ],
+        );
+        let latest_session_dir = resolve_session_dir("latest", &session_dirs).map(str::to_string);
+
+        if let Some(session_dir) = latest_session_dir {
+            let chunk_files = find_on_device(
+                &state.device,
+                &state.package,
+                &[session_dir.as_str(), "-type", "f", "-name", "*.rnst"],
+            );
+
+            match resolve_latest_chunk_file(&chunk_files) {
+                Some(latest_chunk) if last_chunk_path.as_deref() != Some(latest_chunk) => {
+                    if let Some(bytes) = cat_on_device(&state.device, &state.package, latest_chunk)
+                        && let Ok(chunk) = Chunk::decode(&bytes)
+                    {
+                        println!(
+                            "{}",
+                            format_watch_line(chunk_files.len(), Some(&chunk.manifest))
+                        );
+                    }
+                    last_chunk_path = Some(latest_chunk.to_string());
+                }
+                None if !printed_waiting => {
+                    println!("{}", format_watch_line(0, None));
+                    printed_waiting = true;
+                }
+                _ => {}
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(interval));
+    }
 }
 
 /// Runs `find` inside the target app's private storage via `adb shell run-as` — the mechanism
