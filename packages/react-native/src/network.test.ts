@@ -16,6 +16,26 @@ describe('normalizeUrl', () => {
     ).toBe('https://api.example.com/search?q=star+wars');
   });
 
+  it.each([
+    ['https://user:password@example.com/items?token=secret#secret', 'https://example.com/items'],
+    ['//user:password@example.com/items?token=secret#secret', '//example.com/items'],
+    ['/items?token=secret#secret', '/items'],
+    ['https://example.com?token=secret', 'https://example.com/'],
+    ['data:text/plain,secret', '[redacted-url]'],
+    ['https://example.com/items?%zz=secret', '[invalid-url]'],
+    ['http://user:secret@/items', '[invalid-url]'],
+  ])('redacts %s', (input, expected) => {
+    expect(normalizeUrl(input)).toBe(expected);
+  });
+
+  it('preserves repeated allowlisted values, including encoded names', () => {
+    expect(
+      normalizeUrl('/items?%70age=1&page=2&token=secret#secret', {
+        allowlistedQueryParams: ['page'],
+      }),
+    ).toBe('/items?%70age=1&page=2');
+  });
+
   it('leaves a URL with no query string unchanged', () => {
     expect(normalizeUrl('https://api.example.com/program/482')).toBe(
       'https://api.example.com/program/482',
@@ -28,8 +48,8 @@ describe('normalizeUrl', () => {
     );
   });
 
-  it('returns a malformed/relative URL unchanged rather than throwing', () => {
-    expect(normalizeUrl('/relative/path?token=secret')).toBe('/relative/path?token=secret');
+  it('redacts relative query strings and safely handles malformed URLs', () => {
+    expect(normalizeUrl('/relative/path?token=secret')).toBe('/relative/path');
     expect(() => normalizeUrl('not a url at all')).not.toThrow();
   });
 });
@@ -108,4 +128,33 @@ describe('createInstrumentedFetch', () => {
     expect(status).toBe(0);
     expect(responseBytes).toBeNull();
   });
+});
+
+it('uses Request.method and preserves response identity in the legacy helper', async () => {
+  const response = jsonResponse(200);
+  const baseFetch = vi.fn().mockResolvedValue(response);
+  const input = new Request('https://example.com/items', { method: 'POST', body: 'secret' });
+  expect(await createInstrumentedFetch(baseFetch)(input)).toBe(response);
+  expect(baseFetch).toHaveBeenCalledWith(input, undefined);
+  expect(recordNetworkRequestMock.mock.calls[0]?.[0]).toBe('POST');
+});
+
+it.each(['-1', '1.5', 'NaN', '', '9007199254740992'])(
+  'does not report invalid byte counts: %s',
+  async (raw) => {
+    await createInstrumentedFetch(
+      vi.fn().mockResolvedValue(jsonResponse(200, { 'content-length': raw })),
+    )('https://example.com/items');
+    expect(recordNetworkRequestMock.mock.calls[0]?.[5]).toBeNull();
+  },
+);
+
+it('keeps the original error when the legacy recorder fails', async () => {
+  const error = new Error('network error');
+  recordNetworkRequestMock.mockImplementationOnce(() => {
+    throw new Error('telemetry error');
+  });
+  await expect(
+    createInstrumentedFetch(vi.fn().mockRejectedValue(error))('https://example.com'),
+  ).rejects.toBe(error);
 });

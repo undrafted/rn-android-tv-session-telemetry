@@ -1,0 +1,16 @@
+%%{init: {"theme": "neutral"}}%%
+flowchart TD
+    Install["SessionTelemetry.install()<br/>profiling startup"] --> Hook["Observe public XHR open/send<br/>RN TV 0.87.1-0"]
+    Fetch["Built-in RN fetch<br/>including Request / AbortSignal"] --> XHR
+    Clients["XHR-backed JS clients"] --> XHR
+    Direct["Direct XMLHttpRequest"] --> XHR
+    XHR["Original RN XMLHttpRequest<br/>unchanged arguments, bodies and handlers"] --> Native["Original native networking"]
+    Hook -.-> XHR
+    XHR --> End["load / error / abort / timeout<br/>one event per completed request"]
+    End --> Privacy["HTTP(S) method + URL<br/>strip credentials, fragment, query<br/>except explicit query allowlist<br/>no headers or bodies"]
+    Privacy --> Event["Network event<br/>completion timestamp + monotonic duration<br/>status: HTTP code or 0 on failure<br/>known byte estimates, otherwise null"]
+    Event --> Writer["Bounded buffer + native .rnst writer"]
+    Writer --> Report["ADB pull → analysis → HTML / JSON<br/>duplicate-request findings + evidence"]
+    Stop["stop() / reinstall"] --> Cleanup["Detach listeners, restore owned methods<br/>exclude unfinished requests from later installs"]
+    Outside["Outside capture boundary:<br/>native clients, images/media, WebSockets,<br/>independent fetch transports,<br/>requests begun before install"]
+    Privacy -.-> Caveat["Paths remain visible<br/>allowlisted query values remain visible<br/>Content-Length is not measured wire bytes"]

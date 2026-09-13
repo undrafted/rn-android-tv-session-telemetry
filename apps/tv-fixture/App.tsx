@@ -14,6 +14,7 @@
  */
 
 import { Profiler, useState } from 'react';
+import { loadNetworkScenario } from './networkScenario';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   SessionTelemetry,
@@ -38,6 +39,7 @@ function Card({
   // Local visual state only — unrelated to telemetry, which the native global focus listener
   // now handles entirely on its own via this Pressable's nativeID.
   const [focused, setFocused] = useState(false);
+  const [networkStatus, setNetworkStatus] = useState('Select to load');
   // Subscribes to the store via the *stable* selector only — useSyncExternalStore requires its
   // snapshot to be reference-stable when nothing relevant changed, which selectVisibleItemIds
   // deliberately isn't (that's the bug this fixture demonstrates). Calling the unstable one
@@ -55,10 +57,17 @@ function Card({
         store.dispatch({ type: 'catalog/cardFocused', targetId: id });
       }}
       onBlur={() => setFocused(false)}
-      onPress={() => SessionTelemetry.mark(`demo:${id}-select`)}
+      onPress={() => {
+        SessionTelemetry.mark(`demo:${id}-select`);
+        setNetworkStatus('Loading…');
+        loadNetworkScenario(id === 'card-1').then(setNetworkStatus, () =>
+          setNetworkStatus('Start the local network server'),
+        );
+      }}
       style={[styles.card, focused && styles.cardFocused]}
     >
       <Text style={styles.label}>{label}</Text>
+      <Text style={styles.detail}>{networkStatus}</Text>
       <Text style={styles.detail}>
         {itemCount} items · {visibleItemIds.length} visible
       </Text>
@@ -70,8 +79,8 @@ function App() {
   return (
     <Profiler id="App" onRender={onProfilerRender}>
       <View style={styles.container}>
-        <Card id="card-1" label="Press select" hasTVPreferredFocus />
-        <Card id="card-2" label="Or move here" />
+        <Card id="card-1" label="Load twice" hasTVPreferredFocus />
+        <Card id="card-2" label="Load once" />
       </View>
     </Profiler>
   );

@@ -4,12 +4,14 @@ flowchart LR
         direction TB
         App["TV app<br/>react-native-tvos"]
         Lib["Telemetry library<br/>+ Redux middleware & selector wrapper"]
+        Network["Automatic network capture<br/>RN fetch + XHR clients<br/>redacted metadata only"]
         Buffer["Event buffer"]
         FrameTiming["Native frame timing<br/>FrameMetrics"]
         GlobalFocus["Native global focus listener<br/>ViewTreeObserver + nativeID"]
         Collector["Android collector<br/>lifecycle<br/>(planned)"]
         Writer["On-device session writer<br/>.rnst chunks (JNI)"]
         App --> Lib
+        App --> Network --> Lib
         FrameTiming --> Lib
         GlobalFocus --> Lib
         Lib --> Buffer

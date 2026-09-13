@@ -1,3 +1,4 @@
+import { startNetworkCapture, type NormalizeUrlOptions } from './network.js';
 import { Platform, TVEventHandler, type EventSubscription, type HWEvent } from 'react-native';
 import { createSequenceCounter, monotonicNowMs } from './clock.js';
 import { isRemoteInputEventType, type SessionTelemetryEvent } from './events.js';
@@ -29,6 +30,8 @@ export { onProfilerRender } from './profiler.js';
 export { startFrameTimingMonitor, type FrameTimingMonitorOptions } from './frameTiming.js';
 
 export interface InstallOptions {
+  // Automatic capture of RN fetch and XHR-backed requests; no bodies or headers are stored.
+  network?: NormalizeUrlOptions;
   // Once the buffer reaches this size, the oldest event is dropped for each new one recorded
   // (a sliding window), and droppedEventCount increments — bounded memory over a multi-hour QA
   // capture instead of an unbounded array. Clamped to >= 1.
@@ -87,6 +90,7 @@ const CLOCK_SYNC_INTERVAL_MS = 30_000;
 
 const nextSequence = createSequenceCounter();
 
+let stopNetworkCapture: (() => void) | undefined;
 let subscription: EventSubscription | undefined;
 let nativeSessionOpenedUnsubscribe: (() => void) | undefined;
 let previousFocusTarget: string | null = null;
@@ -165,7 +169,6 @@ function emitSessionMetadata(options?: InstallOptions): void {
   });
 }
 
-
 function handleHardwareEvent(event: HWEvent): void {
   if (!installed || !isRemoteInputEventType(event.eventType)) {
     return;
@@ -180,6 +183,7 @@ function handleHardwareEvent(event: HWEvent): void {
 }
 
 function install(options?: InstallOptions): void {
+  stopNetworkCapture?.();
   subscription?.remove();
   nativeSessionOpenedUnsubscribe?.();
   buffer = [];
@@ -210,10 +214,13 @@ function install(options?: InstallOptions): void {
   // trace, not a hypothetical.
   startNativeSession();
   emitSessionMetadata(options);
+  stopNetworkCapture = startNetworkCapture(recordNetworkRequest, options?.network);
 }
 
 function stop(): void {
   installed = false;
+  stopNetworkCapture?.();
+  stopNetworkCapture = undefined;
   subscription?.remove();
   subscription = undefined;
   nativeSessionOpenedUnsubscribe?.();
