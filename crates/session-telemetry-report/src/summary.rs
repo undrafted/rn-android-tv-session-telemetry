@@ -20,6 +20,9 @@ pub struct SessionSummary {
     pub visible_update_count: usize,
     pub session_metadata_count: usize,
     pub selector_count: usize,
+    pub resource_sampling_started_count: usize,
+    pub resource_sample_count: usize,
+    pub resource_sampling_stopped_count: usize,
     /// The chunk's own `ChunkManifest::loss_count` — not derivable from `events` alone (a lost
     /// event is, by definition, not among them), so this defaults to `0` here and the caller
     /// (`main.rs`, which has the manifest) sets it explicitly after construction. Always `0`
@@ -48,6 +51,9 @@ impl SessionSummary {
             visible_update_count: 0,
             session_metadata_count: 0,
             selector_count: 0,
+            resource_sampling_started_count: 0,
+            resource_sample_count: 0,
+            resource_sampling_stopped_count: 0,
             loss_count: 0,
             sequence_start: None,
             sequence_end: None,
@@ -69,6 +75,9 @@ impl SessionSummary {
                 Event::VisibleUpdate(_) => summary.visible_update_count += 1,
                 Event::SessionMetadata(_) => summary.session_metadata_count += 1,
                 Event::Selector(_) => summary.selector_count += 1,
+                Event::ResourceSamplingStarted(_) => summary.resource_sampling_started_count += 1,
+                Event::ResourceSample(_) => summary.resource_sample_count += 1,
+                Event::ResourceSamplingStopped(_) => summary.resource_sampling_stopped_count += 1,
             }
 
             let sequence = event.sequence();

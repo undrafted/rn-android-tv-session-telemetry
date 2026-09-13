@@ -5,5 +5,6 @@ mod event;
 pub use event::{
     ClockSyncEvent, Event, FocusEvent, FrameTimingEvent, InteractionMarkerEvent, JsStallEvent,
     NetworkEvent, ReactCommitEvent, ReactCommitPhase, ReduxDispatchEvent, RemoteInputEvent,
-    SelectorEvent, SessionMetadataEvent, VisibleUpdateEvent,
+    ResourceSampleEvent, ResourceSamplingStartedEvent, ResourceSamplingStoppedEvent, SelectorEvent,
+    SessionMetadataEvent, VisibleUpdateEvent,
 };

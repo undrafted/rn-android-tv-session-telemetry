@@ -9,6 +9,7 @@ import {
   startNativeSession,
   transferEventToNative,
 } from './nativeTransfer.js';
+import { startNativeResourceSampling, stopNativeResourceSampling } from './resourceSampling.js';
 
 export type {
   SessionTelemetryEvent,
@@ -23,6 +24,9 @@ export type {
   VisibleUpdateEvent,
   SessionMetadataEvent,
   SelectorEvent,
+  ResourceSamplingStartedEvent,
+  ResourceSampleEvent,
+  ResourceSamplingStoppedEvent,
 } from './events.js';
 export { startGlobalFocusMonitor } from './globalFocus.js';
 export { normalizeUrl, createInstrumentedFetch, type NormalizeUrlOptions } from './network.js';
@@ -46,6 +50,13 @@ export interface InstallOptions {
   buildType?: string;
 }
 
+export interface ResourceSamplingOptions {
+  // How often to sample process CPU/memory while this window is open, in ms. Defaults to 500
+  // (the plan's "targeted" profile) - a QA capture that wants the coarser "1-5s" profile passes
+  // a larger value explicitly. Clamped to >= 16.
+  intervalMs?: number;
+}
+
 export interface SessionTelemetryApi {
   install(options?: InstallOptions): void;
   stop(): void;
@@ -53,6 +64,19 @@ export interface SessionTelemetryApi {
   recordFocus(targetId: string): void;
   recordVisibleUpdate(targetId: string): void;
   recordDispatch(actionType: string, durationMs: number): void;
+  // Opens an explicit CPU/memory sampling window - unlike every other automatic signal in this
+  // API, this is never started from install() on its own. Its overhead is high enough that it
+  // stays the application's own decision to make, and when: at startup only, or scoped tightly
+  // around one scenario (e.g. a stream/playback request), the same opt-in posture as wiring in
+  // Redux middleware. A no-op if a window is already open.
+  startResourceSampling(options?: ResourceSamplingOptions): void;
+  // Closes the window opened by startResourceSampling. A no-op if none is open.
+  stopResourceSampling(): void;
+  recordResourceSample(
+    cpuUtilizationPercent: number,
+    nativeHeapKb: number,
+    javaHeapKb: number,
+  ): void;
   recordNetworkRequest(
     method: string,
     url: string,
@@ -103,6 +127,7 @@ let buffer: SessionTelemetryEvent[] = [];
 let maxBufferedEvents = DEFAULT_MAX_BUFFERED_EVENTS;
 let droppedEventCount = 0;
 let lastClockSyncAt: number | null = null;
+let resourceSamplingActive = false;
 // Recording methods (mark/recordFocus/handleHardwareEvent) are real no-ops until install()
 // runs. App code calls mark()/recordFocus() unconditionally from UI handlers rather than
 // re-checking the build flag at every call site, so this is what actually keeps a disabled
@@ -192,6 +217,13 @@ function install(options?: InstallOptions): void {
   stopNetworkCapture?.();
   subscription?.remove();
   nativeSessionOpenedUnsubscribe?.();
+  // A window left open from a previous install() must not silently carry into this one - unlike
+  // network/stall capture, this never restarts itself; the application must call
+  // startResourceSampling() again if it still wants one.
+  if (resourceSamplingActive) {
+    stopNativeResourceSampling();
+    resourceSamplingActive = false;
+  }
   buffer = [];
   droppedEventCount = 0;
   maxBufferedEvents = Math.max(1, options?.maxBufferedEvents ?? DEFAULT_MAX_BUFFERED_EVENTS);
@@ -233,6 +265,11 @@ function stop(): void {
   subscription = undefined;
   nativeSessionOpenedUnsubscribe?.();
   nativeSessionOpenedUnsubscribe = undefined;
+  // Closes any window the application left open rather than leaking the native sampler past the
+  // session's own end - emits the same resource-sampling-stopped event a normal
+  // stopResourceSampling() call would (a no-op if none was open), so the report can't mistake
+  // this for a window that just never closed.
+  stopResourceSampling();
   finishNativeSession();
 }
 
@@ -388,6 +425,61 @@ function recordSelector(
   });
 }
 
+// A short-interval default suited to a targeted capture - a QA capture wanting coarser, lower-
+// overhead sampling over a longer session passes a larger intervalMs explicitly.
+const DEFAULT_RESOURCE_SAMPLING_INTERVAL_MS = 500;
+
+function startResourceSampling(options?: ResourceSamplingOptions): void {
+  if (!installed || resourceSamplingActive) {
+    return;
+  }
+  const intervalMs = Math.max(16, options?.intervalMs ?? DEFAULT_RESOURCE_SAMPLING_INTERVAL_MS);
+  resourceSamplingActive = true;
+  maybeEmitClockSync();
+  pushToBufferAndNative({
+    type: 'resource-sampling-started',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    intervalMs,
+  });
+  startNativeResourceSampling(intervalMs, (sample) => {
+    recordResourceSample(sample.cpuUtilizationPercent, sample.nativeHeapKb, sample.javaHeapKb);
+  });
+}
+
+function stopResourceSampling(): void {
+  if (!resourceSamplingActive) {
+    return;
+  }
+  resourceSamplingActive = false;
+  stopNativeResourceSampling();
+  maybeEmitClockSync();
+  pushToBufferAndNative({
+    type: 'resource-sampling-stopped',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+  });
+}
+
+function recordResourceSample(
+  cpuUtilizationPercent: number,
+  nativeHeapKb: number,
+  javaHeapKb: number,
+): void {
+  if (!installed) {
+    return;
+  }
+  maybeEmitClockSync();
+  pushToBufferAndNative({
+    type: 'resource-sample',
+    sequence: nextSequence(),
+    timestamp: monotonicNowMs(),
+    cpuUtilizationPercent,
+    nativeHeapKb,
+    javaHeapKb,
+  });
+}
+
 function getBufferedEvents(): readonly SessionTelemetryEvent[] {
   return buffer;
 }
@@ -408,6 +500,9 @@ export const SessionTelemetry: SessionTelemetryApi = {
   recordFrameTiming,
   recordReactCommit,
   recordSelector,
+  startResourceSampling,
+  stopResourceSampling,
+  recordResourceSample,
   getBufferedEvents,
   getDroppedEventCount,
 };

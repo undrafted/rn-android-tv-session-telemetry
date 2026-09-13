@@ -17,6 +17,7 @@
 import { useState } from 'react';
 import { loadNetworkScenario } from './networkScenario';
 import { runStallScenario } from './stallScenario';
+import { runResourceHeavyScenario } from './resourceSamplingScenario';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SessionTelemetry } from '@rn-session-telemetry/react-native';
 import {
@@ -123,6 +124,33 @@ function CommitCard({ slow }: { slow: boolean }) {
   );
 }
 
+function ResourceCard() {
+  const [focused, setFocused] = useState(false);
+  const [status, setStatus] = useState('Select to stream');
+  return (
+    <Pressable
+      nativeID="resource-heavy"
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPress={() => {
+        // Explicit, app-toggled sampling window - off by default, opened only around this
+        // scenario, same posture as wiring in Redux middleware. intervalMs is short enough
+        // that this ~1.5s scenario still yields several samples.
+        SessionTelemetry.startResourceSampling({ intervalMs: 200 });
+        setStatus('Streaming…');
+        runResourceHeavyScenario().then(() => {
+          SessionTelemetry.stopResourceSampling();
+          setStatus('Complete');
+        });
+      }}
+      style={[styles.card, focused && styles.cardFocused]}
+    >
+      <Text style={styles.label}>Stream/playback</Text>
+      <Text style={styles.detail}>{status}</Text>
+    </Pressable>
+  );
+}
+
 function App() {
   return (
     <View style={styles.container}>
@@ -137,6 +165,9 @@ function App() {
       <View style={styles.row}>
         <CommitCard slow />
         <CommitCard slow={false} />
+      </View>
+      <View style={styles.row}>
+        <ResourceCard />
       </View>
     </View>
   );

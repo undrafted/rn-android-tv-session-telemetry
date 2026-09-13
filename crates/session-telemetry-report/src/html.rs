@@ -1,4 +1,5 @@
 use crate::report::{FindingWithEvidence, Report};
+use crate::resource_sampling::ResourceSamplingWindowSummary;
 use crate::summary::SessionSummary;
 use session_telemetry_analysis::{QaBookmark, SelectorStats, Severity};
 use session_telemetry_protocol::{Event, ReactCommitPhase, SessionMetadataEvent};
@@ -21,6 +22,7 @@ pub fn render_html(report: &Report) -> String {
 <h1>Findings</h1>
 {findings_html}
 {selectors_html}
+{resource_sampling_html}
 {bookmarks_html}
 {timeline_html}
 <script>{TIMELINE_FILTER_JS}</script>
@@ -40,9 +42,48 @@ pub fn render_html(report: &Report) -> String {
         react_summary_html = render_react_summary(&report.react_summary),
         findings_html = render_findings(&report.findings),
         selectors_html = render_selector_stats(&report.selector_stats),
+        resource_sampling_html = render_resource_sampling(&report.resource_sampling_windows),
         bookmarks_html = render_bookmarks(report.bookmarks),
         timeline_html = render_timeline(report.events),
     )
+}
+
+/// Omitted entirely when the application never called `startResourceSampling()` — resource
+/// sampling is off by default, so an empty list here means exactly that, not a measurement gap,
+/// same convention as `render_bookmarks`/`render_selector_stats`.
+fn render_resource_sampling(windows: &[ResourceSamplingWindowSummary]) -> String {
+    if windows.is_empty() {
+        return String::new();
+    }
+    let percent =
+        |value: Option<f64>| value.map_or("unavailable".to_string(), |v| format!("{v:.1}%"));
+    let kb = |value: Option<u64>| value.map_or("unavailable".to_string(), |v| format!("{v} KB"));
+    let mut html = String::from(
+        "<h2>Resource sampling</h2><p>Explicit application-toggled CPU/memory windows — off by default. CPU is normalized to one core and can exceed 100% on a multi-core device; this is not method-level attribution. Memory is combined native+JS heap, not a full process RSS measurement.</p><table><tr><th>Window</th><th>Interval</th><th>Samples</th><th>Closed</th><th>Avg CPU</th><th>Max CPU</th><th>Starting memory</th><th>Ending memory</th></tr>",
+    );
+    for window in windows.iter().take(200) {
+        html.push_str(&format!(
+            "<tr><td>{} → {}</td><td>{} ms</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            window.start_sequence,
+            window
+                .end_sequence
+                .map_or("open".to_string(), |sequence| sequence.to_string()),
+            window.interval_ms,
+            window.sample_count,
+            if window.closed { "yes" } else { "no" },
+            percent(window.average_cpu_utilization_percent),
+            percent(window.max_cpu_utilization_percent),
+            kb(window.starting_memory_kb),
+            kb(window.ending_memory_kb),
+        ));
+    }
+    html.push_str("</table>");
+    if windows.len() > 200 {
+        html.push_str(
+            "<p>Showing the first 200 resource-sampling windows; JSON contains all of them.</p>",
+        );
+    }
+    html
 }
 
 fn render_react_summary(summary: &crate::ReactSummary) -> String {
@@ -321,6 +362,9 @@ const EVENT_TYPE_FILTERS: &[(&str, &str)] = &[
     ("visible-update", "Visible update"),
     ("session-metadata", "Session metadata"),
     ("selector", "Selector"),
+    ("resource-sampling-started", "Resource sampling started"),
+    ("resource-sample", "Resource sample"),
+    ("resource-sampling-stopped", "Resource sampling stopped"),
 ];
 
 fn event_type_tag(event: &Event) -> &'static str {
@@ -337,6 +381,9 @@ fn event_type_tag(event: &Event) -> &'static str {
         Event::VisibleUpdate(_) => "visible-update",
         Event::SessionMetadata(_) => "session-metadata",
         Event::Selector(_) => "selector",
+        Event::ResourceSamplingStarted(_) => "resource-sampling-started",
+        Event::ResourceSample(_) => "resource-sample",
+        Event::ResourceSamplingStopped(_) => "resource-sampling-stopped",
     }
 }
 
@@ -487,6 +534,15 @@ fn describe_event(event: &Event) -> String {
                 ""
             },
         ),
+        Event::ResourceSamplingStarted(event) => format!(
+            "Resource sampling started (interval {} ms)",
+            event.interval_ms
+        ),
+        Event::ResourceSample(event) => format!(
+            "Resource sample: {:.1}% CPU, {} KB native heap, {} KB JS heap",
+            event.cpu_utilization_percent, event.native_heap_kb, event.java_heap_kb
+        ),
+        Event::ResourceSamplingStopped(_) => "Resource sampling stopped".to_string(),
     }
 }
 

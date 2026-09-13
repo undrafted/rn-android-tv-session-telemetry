@@ -49,7 +49,7 @@ test('alternates phases, retains raw pairs and exercises asynchronous workloads'
   const pending = runOverheadBenchmark({ render, request }, options);
   await jest.runAllTimersAsync();
   const result = await pending;
-  expect(result.results).toHaveLength(8);
+  expect(result.results).toHaveLength(10);
   for (const entry of result.results) {
     expect(entry.samples.map(s => s.active)).toEqual([
       false,

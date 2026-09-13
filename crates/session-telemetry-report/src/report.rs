@@ -35,6 +35,10 @@ pub struct Report<'a> {
     pub findings: Vec<FindingWithEvidence<'a>>,
     pub react_summary: crate::ReactSummary,
     pub selector_stats: Vec<SelectorStats>,
+    /// One entry per resource-sampling window the application opened, in order. Empty means the
+    /// application never called `startResourceSampling()` — off by default — not a measurement
+    /// gap.
+    pub resource_sampling_windows: Vec<crate::ResourceSamplingWindowSummary>,
     pub bookmarks: &'a [QaBookmark],
     /// Shared event table; findings reference inclusive sequence ranges.
     pub events: &'a [Event],
@@ -80,6 +84,7 @@ impl<'a> Report<'a> {
                 .collect(),
             selector_stats: selector_stats(events),
             react_summary: crate::ReactSummary::from_events(events),
+            resource_sampling_windows: crate::resource_sampling_summary(events),
             bookmarks,
             events,
         }
@@ -259,6 +264,52 @@ mod tests {
             report.selector_stats[0].selector_id,
             "catalog/selectVisibleItemIds"
         );
+    }
+
+    #[test]
+    fn carries_resource_sampling_windows() {
+        let events = vec![
+            Event::ResourceSamplingStarted(
+                session_telemetry_protocol::ResourceSamplingStartedEvent {
+                    sequence: 0,
+                    timestamp: 0.0,
+                    interval_ms: 500.0,
+                },
+            ),
+            Event::ResourceSample(session_telemetry_protocol::ResourceSampleEvent {
+                sequence: 1,
+                timestamp: 500.0,
+                cpu_utilization_percent: 75.0,
+                native_heap_kb: 1000,
+                java_heap_kb: 1000,
+            }),
+            Event::ResourceSamplingStopped(
+                session_telemetry_protocol::ResourceSamplingStoppedEvent {
+                    sequence: 2,
+                    timestamp: 1000.0,
+                },
+            ),
+        ];
+        let summary = SessionSummary::from_events(&events);
+
+        let report = Report::new(&summary, &[], &events, &[], None);
+
+        assert_eq!(report.resource_sampling_windows.len(), 1);
+        assert!(report.resource_sampling_windows[0].closed);
+        assert_eq!(
+            report.resource_sampling_windows[0].average_cpu_utilization_percent,
+            Some(75.0)
+        );
+    }
+
+    #[test]
+    fn resource_sampling_windows_are_empty_when_the_app_never_starts_sampling() {
+        let events = sample_events();
+        let summary = SessionSummary::from_events(&events);
+
+        let report = Report::new(&summary, &[], &events, &[], None);
+
+        assert_eq!(report.resource_sampling_windows, vec![]);
     }
 
     #[test]

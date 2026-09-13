@@ -13,6 +13,9 @@
     "visibleUpdateCount": 0,
     "sessionMetadataCount": 0,
     "selectorCount": 0,
+    "resourceSamplingStartedCount": 0,
+    "resourceSampleCount": 0,
+    "resourceSamplingStoppedCount": 0,
     "lossCount": 1,
     "sequenceStart": 0,
     "sequenceEnd": 1,
@@ -54,6 +57,7 @@
     ]
   },
   "selectorStats": [],
+  "resourceSamplingWindows": [],
   "bookmarks": [
     {
       "workstationTimestamp": 1700000000100.0,

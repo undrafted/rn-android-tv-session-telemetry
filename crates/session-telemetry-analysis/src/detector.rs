@@ -1,4 +1,5 @@
 use crate::interaction::InteractionWindow;
+use crate::resource_sampling::ResourceSamplingWindow;
 use serde::Serialize;
 use session_telemetry_protocol::Event;
 use std::collections::HashMap;
@@ -25,6 +26,12 @@ pub const EXCESSIVE_COMMITS_DURING_RAPID_FOCUS_MOVEMENT_DETECTOR: &str =
 pub const REPEATED_SELECTOR_RECOMPUTATION_DETECTOR: &str = "repeated-selector-recomputation";
 
 pub const UNSTABLE_SELECTOR_REFERENCE_DETECTOR: &str = "unstable-selector-reference";
+
+pub const HIGH_CPU_SUSTAINED_DURING_RESOURCE_SAMPLING_DETECTOR: &str =
+    "high-cpu-sustained-during-resource-sampling";
+
+pub const MEMORY_GREW_ACROSS_REPEATED_RESOURCE_SAMPLING_WINDOWS_DETECTOR: &str =
+    "memory-grew-across-repeated-resource-sampling-windows";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -638,6 +645,148 @@ pub fn detect_unstable_selector_references(windows: &[InteractionWindow]) -> Vec
     findings
 }
 
+/// Flags a resource-sampling window whose average CPU utilization was sustained high across the
+/// whole window, not just a brief spike — `MIN_SAMPLES` requires enough samples for "average" to
+/// mean something rather than reacting to a single reading. Utilization is normalized to one
+/// core (see `ResourceSampleEvent`'s own doc comment) and can exceed 100 on a multi-core device;
+/// this is never presented as method-level attribution, only that the window as a whole ran hot.
+/// Thresholds are placeholders pending real device measurements, same caveat as every other
+/// detector's thresholds in this file.
+pub fn detect_high_cpu_sustained_during_resource_sampling(
+    windows: &[ResourceSamplingWindow],
+) -> Vec<Finding> {
+    const MIN_SAMPLES: usize = 3;
+    const WARNING_THRESHOLD_PERCENT: f64 = 70.0;
+    const CRITICAL_THRESHOLD_PERCENT: f64 = 90.0;
+
+    let mut findings = Vec::new();
+
+    for window in windows {
+        if window.samples.len() < MIN_SAMPLES {
+            continue;
+        }
+        let Some(average) = window.average_cpu_utilization_percent() else {
+            continue;
+        };
+        let severity = if average >= CRITICAL_THRESHOLD_PERCENT {
+            Severity::Critical
+        } else if average >= WARNING_THRESHOLD_PERCENT {
+            Severity::Warning
+        } else {
+            continue;
+        };
+
+        let sequence_start = window.start_sequence;
+        let sequence_end = window
+            .end_sequence
+            .or_else(|| window.samples.last().map(|sample| sample.sequence))
+            .unwrap_or(sequence_start);
+        findings.push(Finding {
+            id: finding_id(
+                HIGH_CPU_SUSTAINED_DURING_RESOURCE_SAMPLING_DETECTOR,
+                sequence_start,
+                sequence_end,
+            ),
+            detector: HIGH_CPU_SUSTAINED_DURING_RESOURCE_SAMPLING_DETECTOR,
+            severity,
+            sequence_start,
+            sequence_end,
+            value: average,
+            unit: "%",
+            thresholds: vec![
+                Threshold {
+                    name: "warningPercent",
+                    value: WARNING_THRESHOLD_PERCENT,
+                },
+                Threshold {
+                    name: "criticalPercent",
+                    value: CRITICAL_THRESHOLD_PERCENT,
+                },
+            ],
+            summary: format!(
+                "Average CPU utilization was {average:.0}% of one core across {} samples in this resource-sampling window. This is not method-level attribution.",
+                window.samples.len()
+            ),
+        });
+    }
+
+    findings
+}
+
+/// Flags memory that grew across a session's repeated resource-sampling windows — the app
+/// opening/closing a window around the same repeated scenario (e.g. navigating into and out of
+/// the same screen several times) is a meaningful memory trend, as opposed to a single window's
+/// memory reading alone, which says nothing about growth. Requires at least `MIN_WINDOWS` windows
+/// with a real sample each and a strictly higher ending memory reading than the previous window
+/// every time — a single dip breaks the trend rather than being averaged away, since real
+/// repeated-scenario growth should not reverse. This is an observation, not proof of a leak — a
+/// consumer needs a repeated, controlled scenario to draw a stronger conclusion.
+pub fn detect_memory_growth_across_repeated_resource_sampling_windows(
+    windows: &[ResourceSamplingWindow],
+) -> Vec<Finding> {
+    const MIN_WINDOWS: usize = 3;
+    const MIN_GROWTH_KB: u64 = 512;
+
+    let readings: Vec<(u64, u64)> = windows
+        .iter()
+        .filter_map(|window| Some((window.start_sequence, window.ending_memory_kb()?)))
+        .collect();
+
+    if readings.len() < MIN_WINDOWS {
+        return Vec::new();
+    }
+
+    let strictly_increasing = readings.windows(2).all(|pair| pair[1].1 > pair[0].1);
+    if !strictly_increasing {
+        return Vec::new();
+    }
+
+    let first_kb = readings[0].1;
+    let last_kb = readings[readings.len() - 1].1;
+    let growth_kb = last_kb.saturating_sub(first_kb);
+    if growth_kb < MIN_GROWTH_KB {
+        return Vec::new();
+    }
+
+    let sequence_start = readings[0].0;
+    let sequence_end = windows
+        .last()
+        .and_then(|window| {
+            window
+                .end_sequence
+                .or_else(|| window.samples.last().map(|sample| sample.sequence))
+        })
+        .unwrap_or(sequence_start);
+
+    vec![Finding {
+        id: finding_id(
+            MEMORY_GREW_ACROSS_REPEATED_RESOURCE_SAMPLING_WINDOWS_DETECTOR,
+            sequence_start,
+            sequence_end,
+        ),
+        detector: MEMORY_GREW_ACROSS_REPEATED_RESOURCE_SAMPLING_WINDOWS_DETECTOR,
+        severity: Severity::Warning,
+        sequence_start,
+        sequence_end,
+        value: growth_kb as f64,
+        unit: "kb",
+        thresholds: vec![
+            Threshold {
+                name: "minWindows",
+                value: MIN_WINDOWS as f64,
+            },
+            Threshold {
+                name: "minGrowthKb",
+                value: MIN_GROWTH_KB as f64,
+            },
+        ],
+        summary: format!(
+            "Combined native+JS heap grew by {growth_kb} KB across {} consecutive resource-sampling windows, increasing every time. This is an observation, not proof of a leak; a repeated controlled scenario is needed to draw a stronger conclusion.",
+            readings.len()
+        ),
+    }]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1003,7 +1152,8 @@ mod tests {
     #[test]
     fn elapsed_render_interval_includes_yields_without_claiming_continuous_work() {
         // Only 5ms render work across [10, 100]. A frame at [40, 80] overlaps that
-        // elapsed interval even though the former [105, 110] estimate misses it.
+        // elapsed interval; accumulated render-work timing alone would place the estimate
+        // at [105, 110] and miss this overlap.
         let window = window_at(
             0,
             0.0,
@@ -1311,5 +1461,183 @@ mod tests {
         );
 
         assert_eq!(detect_unstable_selector_references(&[window]), vec![]);
+    }
+
+    fn resource_sample_event(
+        sequence: u64,
+        cpu: f64,
+        native_heap_kb: u64,
+        java_heap_kb: u64,
+    ) -> session_telemetry_protocol::ResourceSampleEvent {
+        session_telemetry_protocol::ResourceSampleEvent {
+            sequence,
+            timestamp: sequence as f64,
+            cpu_utilization_percent: cpu,
+            native_heap_kb,
+            java_heap_kb,
+        }
+    }
+
+    fn window_from_samples(
+        start_sequence: u64,
+        samples: &[session_telemetry_protocol::ResourceSampleEvent],
+    ) -> ResourceSamplingWindow<'_> {
+        let end_sequence = samples.last().map(|sample| sample.sequence + 1);
+        ResourceSamplingWindow {
+            start_sequence,
+            start_timestamp: 0.0,
+            interval_ms: 500.0,
+            end_sequence,
+            end_timestamp: end_sequence.map(|_| 1000.0),
+            samples: samples.iter().collect(),
+        }
+    }
+
+    #[test]
+    fn sustained_high_cpu_across_enough_samples_is_flagged() {
+        let samples = vec![
+            resource_sample_event(1, 80.0, 1000, 1000),
+            resource_sample_event(2, 85.0, 1000, 1000),
+            resource_sample_event(3, 90.0, 1000, 1000),
+        ];
+        let window = window_from_samples(0, &samples);
+
+        let findings = detect_high_cpu_sustained_during_resource_sampling(&[window]);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].detector,
+            HIGH_CPU_SUSTAINED_DURING_RESOURCE_SAMPLING_DETECTOR
+        );
+        assert_eq!(findings[0].value, 85.0);
+        assert_eq!(findings[0].unit, "%");
+    }
+
+    #[test]
+    fn a_high_cpu_reading_from_too_few_samples_is_not_flagged() {
+        let samples = vec![
+            resource_sample_event(1, 95.0, 1000, 1000),
+            resource_sample_event(2, 95.0, 1000, 1000),
+        ];
+        let window = window_from_samples(0, &samples);
+
+        assert_eq!(
+            detect_high_cpu_sustained_during_resource_sampling(&[window]),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn low_average_cpu_is_not_flagged() {
+        let samples = vec![
+            resource_sample_event(1, 10.0, 1000, 1000),
+            resource_sample_event(2, 15.0, 1000, 1000),
+            resource_sample_event(3, 20.0, 1000, 1000),
+        ];
+        let window = window_from_samples(0, &samples);
+
+        assert_eq!(
+            detect_high_cpu_sustained_during_resource_sampling(&[window]),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn a_critical_average_is_severity_critical() {
+        let samples = vec![
+            resource_sample_event(1, 92.0, 1000, 1000),
+            resource_sample_event(2, 95.0, 1000, 1000),
+            resource_sample_event(3, 98.0, 1000, 1000),
+        ];
+        let window = window_from_samples(0, &samples);
+
+        let findings = detect_high_cpu_sustained_during_resource_sampling(&[window]);
+
+        assert_eq!(findings[0].severity, Severity::Critical);
+    }
+
+    fn memory_window_samples(
+        start_sequence: u64,
+        ending_memory_kb: u64,
+    ) -> Vec<session_telemetry_protocol::ResourceSampleEvent> {
+        let native_kb = ending_memory_kb / 2;
+        let java_kb = ending_memory_kb - native_kb;
+        vec![resource_sample_event(
+            start_sequence + 1,
+            10.0,
+            native_kb,
+            java_kb,
+        )]
+    }
+
+    #[test]
+    fn memory_that_grows_every_window_across_enough_windows_is_flagged() {
+        let samples_a = memory_window_samples(0, 1000);
+        let samples_b = memory_window_samples(10, 1600);
+        let samples_c = memory_window_samples(20, 2200);
+        let windows = vec![
+            window_from_samples(0, &samples_a),
+            window_from_samples(10, &samples_b),
+            window_from_samples(20, &samples_c),
+        ];
+
+        let findings = detect_memory_growth_across_repeated_resource_sampling_windows(&windows);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].detector,
+            MEMORY_GREW_ACROSS_REPEATED_RESOURCE_SAMPLING_WINDOWS_DETECTOR
+        );
+        assert_eq!(findings[0].value, 1200.0);
+        assert_eq!(findings[0].unit, "kb");
+    }
+
+    #[test]
+    fn fewer_than_the_minimum_windows_is_not_flagged() {
+        let samples_a = memory_window_samples(0, 1000);
+        let samples_b = memory_window_samples(10, 2000);
+        let windows = vec![
+            window_from_samples(0, &samples_a),
+            window_from_samples(10, &samples_b),
+        ];
+
+        assert_eq!(
+            detect_memory_growth_across_repeated_resource_sampling_windows(&windows),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn a_dip_breaks_the_growth_trend() {
+        let samples_a = memory_window_samples(0, 1000);
+        let samples_b = memory_window_samples(10, 900);
+        let samples_c = memory_window_samples(20, 2000);
+        let windows = vec![
+            window_from_samples(0, &samples_a),
+            window_from_samples(10, &samples_b),
+            window_from_samples(20, &samples_c),
+        ];
+
+        assert_eq!(
+            detect_memory_growth_across_repeated_resource_sampling_windows(&windows),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn growth_under_the_minimum_threshold_is_not_flagged() {
+        let samples_a = memory_window_samples(0, 1000);
+        let samples_b = memory_window_samples(10, 1050);
+        let samples_c = memory_window_samples(20, 1100);
+        let windows = vec![
+            window_from_samples(0, &samples_a),
+            window_from_samples(10, &samples_b),
+            window_from_samples(20, &samples_c),
+        ];
+
+        assert_eq!(
+            detect_memory_growth_across_repeated_resource_sampling_windows(&windows),
+            vec![]
+        );
     }
 }

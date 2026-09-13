@@ -125,6 +125,40 @@ export interface SelectorEvent {
   resultChanged: boolean;
 }
 
+// Opens an explicit CPU/memory sampling window (see SessionTelemetry.startResourceSampling in
+// index.ts). Unlike network/JS-stall/React-commit capture, resource sampling is never started
+// automatically from install() - its overhead is high enough that the application must open a
+// window itself, the same opt-in posture as Redux middleware. intervalMs is this window's
+// configured sampling cadence, disclosed so a report consumer can judge sample coarseness.
+export interface ResourceSamplingStartedEvent {
+  type: 'resource-sampling-started';
+  sequence: number;
+  timestamp: number;
+  intervalMs: number;
+}
+
+// One periodic sample taken while a resource-sampling window is open. cpuUtilizationPercent is
+// the process's CPU time delta since the previous sample divided by the elapsed wall-clock
+// delta, as a percentage of one core - it can exceed 100 on a multi-core device actively using
+// more than one thread, and must not be presented as method-level attribution. nativeHeapKb/
+// javaHeapKb are the managed/native breakdown Debug.getNativeHeapAllocatedSize()/Runtime heap
+// usage give without the more expensive ActivityManager.getProcessMemoryInfo cross-process query.
+export interface ResourceSampleEvent {
+  type: 'resource-sample';
+  sequence: number;
+  timestamp: number;
+  cpuUtilizationPercent: number;
+  nativeHeapKb: number;
+  javaHeapKb: number;
+}
+
+// Closes a resource-sampling window opened by a matching ResourceSamplingStartedEvent.
+export interface ResourceSamplingStoppedEvent {
+  type: 'resource-sampling-stopped';
+  sequence: number;
+  timestamp: number;
+}
+
 export type SessionTelemetryEvent =
   | RemoteInputEvent
   | FocusEvent
@@ -137,7 +171,10 @@ export type SessionTelemetryEvent =
   | ClockSyncEvent
   | VisibleUpdateEvent
   | SessionMetadataEvent
-  | SelectorEvent;
+  | SelectorEvent
+  | ResourceSamplingStartedEvent
+  | ResourceSampleEvent
+  | ResourceSamplingStoppedEvent;
 
 // react-native-tvos's TVEventHandler still emits 'focus'/'blur' on the old architecture, but
 // its own types document them as deprecated and not emitted under Fabric (New Architecture,

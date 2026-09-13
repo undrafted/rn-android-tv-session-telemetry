@@ -19,6 +19,9 @@ pub enum Event {
     VisibleUpdate(VisibleUpdateEvent),
     SessionMetadata(SessionMetadataEvent),
     Selector(SelectorEvent),
+    ResourceSamplingStarted(ResourceSamplingStartedEvent),
+    ResourceSample(ResourceSampleEvent),
+    ResourceSamplingStopped(ResourceSamplingStoppedEvent),
 }
 
 impl Event {
@@ -39,6 +42,9 @@ impl Event {
             Event::VisibleUpdate(event) => event.sequence,
             Event::SessionMetadata(event) => event.sequence,
             Event::Selector(event) => event.sequence,
+            Event::ResourceSamplingStarted(event) => event.sequence,
+            Event::ResourceSample(event) => event.sequence,
+            Event::ResourceSamplingStopped(event) => event.sequence,
         }
     }
 
@@ -59,6 +65,9 @@ impl Event {
             Event::VisibleUpdate(event) => event.timestamp,
             Event::SessionMetadata(event) => event.timestamp,
             Event::Selector(event) => event.timestamp,
+            Event::ResourceSamplingStarted(event) => event.timestamp,
+            Event::ResourceSample(event) => event.timestamp,
+            Event::ResourceSamplingStopped(event) => event.timestamp,
         }
     }
 }
@@ -231,6 +240,46 @@ pub struct SelectorEvent {
     pub result_changed: bool,
 }
 
+/// Opens an explicit CPU/memory sampling window. Unlike every other automatic signal in this
+/// protocol (network, JS stalls, React commits), resource sampling is never started from
+/// `install()` — its overhead is high enough that the application must open a window itself
+/// (`SessionTelemetry.startResourceSampling()`), the same opt-in posture as Redux middleware.
+/// `interval_ms` is the configured sampling cadence for this window, disclosed so a report
+/// consumer can judge how coarse the samples inside it are.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSamplingStartedEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub interval_ms: f64,
+}
+
+/// One periodic sample taken while a resource-sampling window is open (between a
+/// `ResourceSamplingStartedEvent` and the next `ResourceSamplingStoppedEvent`). `cpu_utilization_percent`
+/// is the process's CPU time delta since the previous sample divided by the elapsed wall-clock
+/// delta, expressed as a percentage of one core — it can exceed 100 on a multi-core device
+/// actively using more than one thread, and must not be presented as method-level attribution.
+/// `native_heap_kb`/`java_heap_kb` are the
+/// managed/native breakdown `Debug.getNativeHeapAllocatedSize()`/`Runtime` heap usage give
+/// without the more expensive `ActivityManager.getProcessMemoryInfo` cross-process query.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSampleEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+    pub cpu_utilization_percent: f64,
+    pub native_heap_kb: u64,
+    pub java_heap_kb: u64,
+}
+
+/// Closes a resource-sampling window opened by a matching `ResourceSamplingStartedEvent`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSamplingStoppedEvent {
+    pub sequence: u64,
+    pub timestamp: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,6 +444,22 @@ mod tests {
                 inputs_changed: false,
                 result_changed: true,
             }),
+            Event::ResourceSamplingStarted(ResourceSamplingStartedEvent {
+                sequence: 12,
+                timestamp: 13.0,
+                interval_ms: 500.0,
+            }),
+            Event::ResourceSample(ResourceSampleEvent {
+                sequence: 13,
+                timestamp: 14.0,
+                cpu_utilization_percent: 42.5,
+                native_heap_kb: 1024,
+                java_heap_kb: 2048,
+            }),
+            Event::ResourceSamplingStopped(ResourceSamplingStoppedEvent {
+                sequence: 14,
+                timestamp: 15.0,
+            }),
         ];
 
         for event in events {
@@ -461,6 +526,48 @@ mod tests {
         );
         assert_eq!(event.sequence(), 3);
         assert_eq!(event.timestamp(), 50.0);
+    }
+
+    #[test]
+    fn decodes_a_resource_sample_event_exactly_as_the_js_library_serializes_it() {
+        let json = r#"{"type":"resource-sample","sequence":13,"timestamp":14.0,"cpuUtilizationPercent":42.5,"nativeHeapKb":1024,"javaHeapKb":2048}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            event,
+            Event::ResourceSample(ResourceSampleEvent {
+                sequence: 13,
+                timestamp: 14.0,
+                cpu_utilization_percent: 42.5,
+                native_heap_kb: 1024,
+                java_heap_kb: 2048,
+            })
+        );
+        assert_eq!(event.sequence(), 13);
+        assert_eq!(event.timestamp(), 14.0);
+    }
+
+    #[test]
+    fn decodes_resource_sampling_started_and_stopped_events() {
+        let started_json = r#"{"type":"resource-sampling-started","sequence":12,"timestamp":13.0,"intervalMs":500.0}"#;
+        let stopped_json = r#"{"type":"resource-sampling-stopped","sequence":14,"timestamp":15.0}"#;
+
+        assert_eq!(
+            serde_json::from_str::<Event>(started_json).unwrap(),
+            Event::ResourceSamplingStarted(ResourceSamplingStartedEvent {
+                sequence: 12,
+                timestamp: 13.0,
+                interval_ms: 500.0,
+            })
+        );
+        assert_eq!(
+            serde_json::from_str::<Event>(stopped_json).unwrap(),
+            Event::ResourceSamplingStopped(ResourceSamplingStoppedEvent {
+                sequence: 14,
+                timestamp: 15.0,
+            })
+        );
     }
 
     #[test]

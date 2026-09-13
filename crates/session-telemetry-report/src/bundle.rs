@@ -132,9 +132,15 @@ pub fn write_report_bundle(report: &Report, index_path: &Path) -> io::Result<()>
             "reactCommitCapture": report.react_commit_capture,
             "clockUncertaintyMs": report.clock_uncertainty_ms,
             "deviceMetadata": report.device_metadata,
+            // Not paged, unlike findings/interactions/selectors: an application opens/closes a
+            // resource-sampling window deliberately, never automatically, so even a multi-hour QA
+            // session is expected to produce far fewer of these than events or interactions -
+            // same "small, always fully included" treatment as deviceMetadata/reactCommitCapture
+            // above.
+            "resourceSamplingWindows": report.resource_sampling_windows,
             "evidenceLookup": "Findings reference inclusive sequenceStart/sequenceEnd ranges in event pages. Page paths are relative to this index. Event pages include timestamp bounds for time-window selection.",
             "pageSize": PAGE_SIZE,
-            "counts": { "events": events.len(), "findings": report.findings.len(), "interactions": report.react_summary.interactions.len(), "selectors": report.selector_stats.len(), "bookmarks": report.bookmarks.len(), "profilers": report.react_summary.by_profiler.len() },
+            "counts": { "events": events.len(), "findings": report.findings.len(), "interactions": report.react_summary.interactions.len(), "selectors": report.selector_stats.len(), "bookmarks": report.bookmarks.len(), "profilers": report.react_summary.by_profiler.len(), "resourceSamplingWindows": report.resource_sampling_windows.len() },
             "pages": { "events":event_pages,"findings":findings,"interactions":interactions,"selectors":selectors,"bookmarks":bookmarks,"profilers":profilers }
         });
         write_json(&temporary_index, &index)?;
@@ -251,6 +257,54 @@ mod tests {
         let bad_report = Report::new(&summary, &[], &bad, &[], None);
         assert!(write_report_bundle(&bad_report, &path).is_err());
         assert_eq!(fs::read(&path).unwrap(), original);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn resource_sampling_windows_are_included_in_the_index_unpaged() {
+        let dir = std::env::temp_dir().join(format!(
+            "rnst-resource-sampling-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let events = vec![
+            Event::ResourceSamplingStarted(
+                session_telemetry_protocol::ResourceSamplingStartedEvent {
+                    sequence: 0,
+                    timestamp: 0.0,
+                    interval_ms: 500.0,
+                },
+            ),
+            Event::ResourceSample(session_telemetry_protocol::ResourceSampleEvent {
+                sequence: 1,
+                timestamp: 500.0,
+                cpu_utilization_percent: 80.0,
+                native_heap_kb: 1000,
+                java_heap_kb: 1000,
+            }),
+            Event::ResourceSamplingStopped(
+                session_telemetry_protocol::ResourceSamplingStoppedEvent {
+                    sequence: 2,
+                    timestamp: 1000.0,
+                },
+            ),
+        ];
+        let summary = SessionSummary::from_events(&events);
+        let report = Report::new(&summary, &[], &events, &[], None);
+        let path = dir.join("report.json");
+
+        write_report_bundle(&report, &path).unwrap();
+
+        let index: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(index["counts"]["resourceSamplingWindows"], 1);
+        assert_eq!(
+            index["resourceSamplingWindows"][0]["averageCpuUtilizationPercent"],
+            80.0
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -4,10 +4,13 @@ use session_telemetry_adb::{
     resolve_latest_chunk_file, resolve_session_dir,
 };
 use session_telemetry_analysis::{
-    ClockMap, Finding, QaBookmark, build_interaction_windows, clock_sync_samples_from_events,
-    create_bookmark, detect_excessive_commits_during_rapid_focus_movement,
-    detect_high_latency_focus_changes, detect_high_latency_visible_updates,
-    detect_js_stalls_overlapping_interactions, detect_network_completions_followed_by_commits,
+    ClockMap, Finding, QaBookmark, build_interaction_windows, build_resource_sampling_windows,
+    clock_sync_samples_from_events, create_bookmark,
+    detect_excessive_commits_during_rapid_focus_movement,
+    detect_high_cpu_sustained_during_resource_sampling, detect_high_latency_focus_changes,
+    detect_high_latency_visible_updates, detect_js_stalls_overlapping_interactions,
+    detect_memory_growth_across_repeated_resource_sampling_windows,
+    detect_network_completions_followed_by_commits,
     detect_react_commits_overlapping_delayed_frames, detect_repeated_network_requests,
     detect_repeated_redux_dispatches, detect_repeated_selector_recomputation,
     detect_unstable_selector_references,
@@ -570,6 +573,14 @@ fn collect_findings(chunk: &Chunk) -> Vec<Finding> {
     ));
     findings.extend(detect_repeated_selector_recomputation(&windows));
     findings.extend(detect_unstable_selector_references(&windows));
+
+    let resource_windows = build_resource_sampling_windows(&chunk.events);
+    findings.extend(detect_high_cpu_sustained_during_resource_sampling(
+        &resource_windows,
+    ));
+    findings
+        .extend(detect_memory_growth_across_repeated_resource_sampling_windows(&resource_windows));
+
     findings.sort_by_key(|finding| finding.sequence_start);
     findings
 }

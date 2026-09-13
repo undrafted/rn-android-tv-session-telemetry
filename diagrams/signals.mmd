@@ -12,6 +12,7 @@ flowchart TD
     JSStall["JS stalls<br/>automatic at install(): one bounded timer<br/>monotonic overshoot heuristic<br/>50ms interval / threshold by default"] --> Timeline
     ReactCommit["React commits<br/>withTelemetryRoot at root registration<br/>profiling Fabric renderer<br/>render work + renderStartMs / commitTimeMs<br/>elapsed interval may include pauses"] --> Timeline
     FrameTiming["Android frame timing<br/>via native FrameMetrics listener"] --> Timeline
+    ResourceSampling["Resource samples (CPU/memory)<br/>explicit startResourceSampling()/stopResourceSampling(),<br/>off by default, native HandlerThread sampler"] --> Timeline
 
     ClockSync["Clock-sync samples<br/>periodic, piggybacked on other<br/>event pushes (~30s) + once at install()"] --> ClockMapping["Clock mapping (ClockMap)<br/>fits offset + scale from samples"]
     ClockMapping --> ReportOut
@@ -25,6 +26,9 @@ flowchart TD
     Timeline --> ReactSummary
     ReactSummary --> ReportOut
     Windows --> Detectors["Detectors"]
+    ResourceSampling --> ResourceWindows["Resource-sampling windows<br/>grouped by start/stop pair, not by interaction"]
+    ResourceWindows --> Detectors
+    ResourceWindows --> ReportOut
     Detectors --> Findings["Findings"]
     Findings --> ReportOut["HTML / JSON report"]
     Summary --> ReportOut
