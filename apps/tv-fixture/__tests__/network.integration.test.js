@@ -13,7 +13,7 @@ import { NativeModules } from 'react-native';
 import {
   SessionTelemetry,
   createInstrumentedFetch,
-} from '@rn-session-telemetry/react-native';
+} from '@rn-android-tv-session-telemetry/react-native';
 
 jest.mock('react-native/Libraries/Network/RCTNetworking', () => {
   const listeners = new Map();

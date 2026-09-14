@@ -8,7 +8,7 @@ import {
   startFrameTimingMonitor,
   startGlobalFocusMonitor,
   withTelemetryRoot,
-} from '@rn-session-telemetry/react-native';
+} from '@rn-android-tv-session-telemetry/react-native';
 import BenchmarkApp from './BenchmarkApp';
 import App from './App';
 import { name as appName } from './app.json';

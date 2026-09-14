@@ -1,4 +1,4 @@
-package com.rnsessiontelemetry.tvfixture
+package com.rnandroidtvsessiontelemetry.tvfixture
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

@@ -1,8 +1,6 @@
-# React Native Session Telemetry
+# React Native Android TV Session Telemetry
 
-Session-based performance telemetry for React Native — from remote input to rendered frame.
-
-> **Current scope:** The project currently targets React Native applications running on Android TV only.
+Session-based performance telemetry for React Native Android TV — from remote input to rendered frame.
 
 - [Architecture](docs/architecture.md)
 - [Telemetry signals](docs/signals.md)

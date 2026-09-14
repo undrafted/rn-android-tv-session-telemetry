@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mocking '@rn-session-telemetry/react-native' directly (rather than trying to mock the
+// Mocking '@rn-android-tv-session-telemetry/react-native' directly (rather than trying to mock the
 // 'react-native' it transitively imports) — Vitest doesn't reliably intercept transitive
 // imports across a workspace symlink boundary, and this is a more focused unit test of the
 // middleware's own logic anyway.
@@ -9,7 +9,7 @@ const { recordDispatchMock, recordSelectorMock } = vi.hoisted(() => ({
   recordSelectorMock: vi.fn(),
 }));
 
-vi.mock('@rn-session-telemetry/react-native', () => ({
+vi.mock('@rn-android-tv-session-telemetry/react-native', () => ({
   SessionTelemetry: { recordDispatch: recordDispatchMock, recordSelector: recordSelectorMock },
 }));
 

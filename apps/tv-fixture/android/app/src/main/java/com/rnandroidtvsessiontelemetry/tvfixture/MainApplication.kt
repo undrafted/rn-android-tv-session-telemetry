@@ -1,4 +1,4 @@
-package com.rnsessiontelemetry.tvfixture
+package com.rnandroidtvsessiontelemetry.tvfixture
 
 import android.app.Application
 import com.facebook.react.PackageList
@@ -9,8 +9,8 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 
 class MainApplication : Application(), ReactApplication {
 
-  // No manual @rn-session-telemetry/react-native registration needed: the library exposes
-  // exactly one ReactPackage (RnSessionTelemetryPackage), which RN's autolinking discovers on
+  // No manual @rn-android-tv-session-telemetry/react-native registration needed: the library exposes
+  // exactly one ReactPackage (RnAndroidTvSessionTelemetryPackage), which RN's autolinking discovers on
   // its own - autolinking only finds one `*Package.{java,kt}` file per npm dependency, so this
   // only works because the library keeps to one.
   override val reactHost: ReactHost by lazy {

@@ -6,7 +6,7 @@ import {
   SessionTelemetry,
   withTelemetryRoot,
   type ReactCommitEvent,
-} from '@rn-session-telemetry/react-native';
+} from '@rn-android-tv-session-telemetry/react-native';
 
 jest.mock('react-native', () => ({
   TVEventHandler: { addListener: () => ({ remove() {} }) },

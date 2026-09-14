@@ -66,10 +66,10 @@ afterEvaluate {
     tasks.matching { it.name.startsWith("createBundle") && it.name.endsWith("JsAndAssets") }.configureEach { bundleTask ->
         bundleTask.inputs.files(
             fileTree("$rootDir/../../../packages/react-native/dist") { include("**/*.js") }
-        ).withPropertyName("rnSessionTelemetryReactNativeDist")
+        ).withPropertyName("rnAndroidTvSessionTelemetryReactNativeDist")
         bundleTask.inputs.files(
             fileTree("$rootDir/../../../packages/redux/dist") { include("**/*.js") }
-        ).withPropertyName("rnSessionTelemetryReduxDist")
+        ).withPropertyName("rnAndroidTvSessionTelemetryReduxDist")
     }
 }
 
@@ -96,9 +96,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.rnsessiontelemetry.tvfixture"
+    namespace "com.rnandroidtvsessiontelemetry.tvfixture"
     defaultConfig {
-        applicationId "com.rnsessiontelemetry.tvfixture"
+        applicationId "com.rnandroidtvsessiontelemetry.tvfixture"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -123,7 +123,7 @@ android {
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
-        // The only build type where RN Session Telemetry actually records anything.
+        // The only build type where RN Android TV Session Telemetry actually records anything.
         // Mirrors `release` (same optimization/signing) so measured overhead is representative,
         // but the JS bundle step must be run with RNST_PROFILING=1 so the
         // __RN_SESSION_TELEMETRY_ENABLED__ Babel define resolves to `true` instead of being

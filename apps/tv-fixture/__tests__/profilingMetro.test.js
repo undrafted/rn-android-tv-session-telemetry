@@ -2,7 +2,7 @@
 const path = require('node:path');
 const {
   withReactProfiling,
-} = require('@rn-session-telemetry/react-native/metro.cjs');
+} = require('@rn-android-tv-session-telemetry/react-native/metro.cjs');
 const root = path.dirname(require.resolve('react-native/package.json'));
 const prod = path.join(
   root,

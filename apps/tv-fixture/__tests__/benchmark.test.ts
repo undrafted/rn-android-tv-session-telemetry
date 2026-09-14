@@ -2,7 +2,7 @@
  * @format
  */
 
-import { SessionTelemetry } from '@rn-session-telemetry/react-native';
+import { SessionTelemetry } from '@rn-android-tv-session-telemetry/react-native';
 import { median, runOverheadBenchmark } from '../benchmark';
 
 // A full replacement, not `{ ...jest.requireActual('react-native'), TVEventHandler: ... }` -

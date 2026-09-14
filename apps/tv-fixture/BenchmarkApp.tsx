@@ -6,7 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { Text, View } from 'react-native';
-import { onProfilerRender } from '@rn-session-telemetry/react-native';
+import { onProfilerRender } from '@rn-android-tv-session-telemetry/react-native';
 import { runOverheadBenchmark } from './benchmark';
 
 function Workload({ tick, complete }: { tick: number; complete: () => void }) {

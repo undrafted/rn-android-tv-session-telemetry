@@ -1,4 +1,4 @@
-package com.rnsessiontelemetry.reactnative
+package com.rnandroidtvsessiontelemetry.reactnative
 
 // Thin JNI declarations matching session-telemetry-android's exported symbols (crates/
 // session-telemetry-android/src/lib.rs) - reuses session-telemetry-session's chunk/checksum

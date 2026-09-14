@@ -1,5 +1,5 @@
 import type { Middleware, UnknownAction } from 'redux';
-import { SessionTelemetry } from '@rn-session-telemetry/react-native';
+import { SessionTelemetry } from '@rn-android-tv-session-telemetry/react-native';
 
 export interface TelemetryMiddlewareOptions {
   includeActionTypes: boolean;

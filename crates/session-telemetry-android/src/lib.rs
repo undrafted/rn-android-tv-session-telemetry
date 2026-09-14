@@ -44,7 +44,7 @@ fn write_chunk(output_dir: &Path, next_chunk_index: &mut u32, chunk: &Chunk) {
 /// `budget_bytes <= 0` means no total-storage budget. Returns an opaque handle for
 /// `nativePushEvent`/`nativeFinish`, or 0 if `output_dir` isn't valid UTF-8.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_rnsessiontelemetry_reactnative_NativeSessionWriter_nativeOpen(
+pub extern "system" fn Java_com_rnandroidtvsessiontelemetry_reactnative_NativeSessionWriter_nativeOpen(
     mut env: JNIEnv,
     _class: JClass,
     output_dir: JString,
@@ -80,7 +80,7 @@ pub extern "system" fn Java_com_rnsessiontelemetry_reactnative_NativeSessionWrit
 /// covers in-memory recency; this on-device file is what survives past the JS process dying.
 /// Returns an OUTCOME_* code.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_rnsessiontelemetry_reactnative_NativeSessionWriter_nativePushEvent(
+pub extern "system" fn Java_com_rnandroidtvsessiontelemetry_reactnative_NativeSessionWriter_nativePushEvent(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -117,7 +117,7 @@ pub extern "system" fn Java_com_rnsessiontelemetry_reactnative_NativeSessionWrit
 /// must not be used again after this call. Returns the total number of chunk files this writer
 /// produced across its whole lifetime, or -1 for an already-null handle.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_rnsessiontelemetry_reactnative_NativeSessionWriter_nativeFinish(
+pub extern "system" fn Java_com_rnandroidtvsessiontelemetry_reactnative_NativeSessionWriter_nativeFinish(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

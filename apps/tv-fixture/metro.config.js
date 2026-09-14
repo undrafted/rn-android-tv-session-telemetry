@@ -2,7 +2,7 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 const path = require('path');
 const {
   withReactProfiling,
-} = require('@rn-session-telemetry/react-native/metro.cjs');
+} = require('@rn-android-tv-session-telemetry/react-native/metro.cjs');
 
 // This is an npm workspace, so hoisted dependencies (@babel/runtime included) live in the
 // monorepo root's node_modules, not this app's own - Metro's default config only looks in the
@@ -20,7 +20,7 @@ function escapeRegExp(value) {
 // component's view config, another looks it up and finds nothing: "View config getter callback
 // ... must be a function"):
 //
-//  1. @rn-session-telemetry/react-native has its own local install (packages/react-native/
+//  1. @rn-android-tv-session-telemetry/react-native has its own local install (packages/react-native/
 //     node_modules/react-native), separate from this app's, even though it's the same version.
 //  2. @react-native-tvos/virtualized-lists (a dependency of react-native-tvos itself) depends on
 //     plain "react-native", which npm nests under this app's react-native-tvos install - and

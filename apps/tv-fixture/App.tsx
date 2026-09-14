@@ -1,5 +1,5 @@
 /**
- * RN Session Telemetry — TV fixture
+ * RN Android TV Session Telemetry — TV fixture
  *
  * Two side-by-side focusable cards used to validate that a remote-control press, the resulting
  * focus transition, and its visible-update confirmation all show up as events — a DPAD_RIGHT/
@@ -19,7 +19,7 @@ import { loadNetworkScenario } from './networkScenario';
 import { runStallScenario } from './stallScenario';
 import { runResourceHeavyScenario } from './resourceSamplingScenario';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SessionTelemetry } from '@rn-session-telemetry/react-native';
+import { SessionTelemetry } from '@rn-android-tv-session-telemetry/react-native';
 import {
   selectItemCount,
   selectVisibleItemIds,

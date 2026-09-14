@@ -1,6 +1,6 @@
 # TV Fixture
 
-The demonstration Android TV app used to build and verify RN Session Telemetry against a real
+The demo Android TV app used to build and verify RN Android TV Session Telemetry against a real
 device — a focusable card that records remote input, focus, and interaction-marker events
 through the library.
 

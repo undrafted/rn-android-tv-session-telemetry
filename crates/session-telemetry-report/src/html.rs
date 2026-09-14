@@ -11,7 +11,7 @@ pub fn render_html(report: &Report) -> String {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>RN Session Telemetry Report</title>
+<title>RN Android TV Session Telemetry Report</title>
 <style>{CSS}</style>
 </head>
 <body>

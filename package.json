@@ -1,5 +1,5 @@
 {
-  "name": "rn-session-telemetry",
+  "name": "rn-android-tv-session-telemetry",
   "private": true,
   "description": "Session-based performance telemetry for React Native — from remote input to rendered frame",
   "engines": {

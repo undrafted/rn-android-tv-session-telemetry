@@ -12,7 +12,7 @@ import { applyMiddleware, createStore } from 'redux';
 import {
   createTelemetryMiddleware,
   telemetrySelector,
-} from '@rn-session-telemetry/redux';
+} from '@rn-android-tv-session-telemetry/redux';
 
 interface CatalogItem {
   id: string;

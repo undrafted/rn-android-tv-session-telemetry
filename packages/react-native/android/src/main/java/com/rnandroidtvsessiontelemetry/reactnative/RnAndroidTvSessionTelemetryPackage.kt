@@ -1,4 +1,4 @@
-package com.rnsessiontelemetry.reactnative
+package com.rnandroidtvsessiontelemetry.reactnative
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
@@ -11,7 +11,7 @@ import com.facebook.react.uimanager.ViewManager
 // three separate package files (one per native module) a host app's MainApplication had to
 // register two of them by hand, or they silently did nothing. One package returning every
 // module fixes that: a host app needs zero native code to link this library at all.
-class RnSessionTelemetryPackage : ReactPackage {
+class RnAndroidTvSessionTelemetryPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
       listOf(
           FrameTimingModule(reactContext),

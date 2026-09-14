@@ -1,4 +1,4 @@
-package com.rnsessiontelemetry.reactnative
+package com.rnandroidtvsessiontelemetry.reactnative
 
 import android.os.Handler
 import android.os.HandlerThread

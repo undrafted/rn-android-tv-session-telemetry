@@ -1,5 +1,5 @@
 {
-  "name": "@rn-session-telemetry/react-native",
+  "name": "@rn-android-tv-session-telemetry/react-native",
   "version": "0.0.0",
   "description": "Embedded session telemetry library for React Native applications on Android TV.",
   "private": true,

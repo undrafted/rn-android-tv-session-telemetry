@@ -2,11 +2,11 @@ import { Platform } from 'react-native';
 import {
   SessionTelemetry,
   onProfilerRender,
-} from '@rn-session-telemetry/react-native';
+} from '@rn-android-tv-session-telemetry/react-native';
 import {
   createTelemetryMiddleware,
   telemetrySelector,
-} from '@rn-session-telemetry/redux';
+} from '@rn-android-tv-session-telemetry/redux';
 import { applyMiddleware, createStore } from 'redux';
 
 export const BENCHMARK_DEFAULTS = {

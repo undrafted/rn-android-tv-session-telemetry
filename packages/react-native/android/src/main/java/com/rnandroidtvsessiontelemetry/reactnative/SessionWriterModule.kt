@@ -1,4 +1,4 @@
-package com.rnsessiontelemetry.reactnative
+package com.rnandroidtvsessiontelemetry.reactnative
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -202,7 +202,7 @@ class SessionWriterModule(reactContext: ReactApplicationContext) :
     // Mirrored exactly in session-telemetry-cli/src/main.rs's send_broadcast calls - there's no
     // shared-constant mechanism across Kotlin and Rust, so keep both sides in sync by hand if
     // either changes.
-    const val ACTION_START_SESSION = "com.rnsessiontelemetry.reactnative.action.START_SESSION"
-    const val ACTION_STOP_SESSION = "com.rnsessiontelemetry.reactnative.action.STOP_SESSION"
+    const val ACTION_START_SESSION = "com.rnandroidtvsessiontelemetry.reactnative.action.START_SESSION"
+    const val ACTION_STOP_SESSION = "com.rnandroidtvsessiontelemetry.reactnative.action.STOP_SESSION"
   }
 }

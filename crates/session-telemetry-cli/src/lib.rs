@@ -15,7 +15,7 @@ use std::time::SystemTime;
 #[command(
     name = "session-telemetry",
     version,
-    about = "RN Session Telemetry CLI"
+    about = "RN Android TV Session Telemetry CLI"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -404,7 +404,7 @@ mod tests {
             "--name",
             "catalog-navigation",
             "--package",
-            "com.rnsessiontelemetry.tvfixture",
+            "com.rnandroidtvsessiontelemetry.tvfixture",
         ])
         .unwrap();
 
@@ -414,7 +414,7 @@ mod tests {
                 mode: RecordMode::Targeted,
                 device: "192.168.1.40:5555".to_string(),
                 name: "catalog-navigation".to_string(),
-                package: "com.rnsessiontelemetry.tvfixture".to_string(),
+                package: "com.rnandroidtvsessiontelemetry.tvfixture".to_string(),
             }
         );
     }
@@ -461,7 +461,7 @@ mod tests {
             "--device",
             "emulator-5554",
             "--package",
-            "com.rnsessiontelemetry.tvfixture",
+            "com.rnandroidtvsessiontelemetry.tvfixture",
         ])
         .unwrap();
 
@@ -470,7 +470,7 @@ mod tests {
             Command::Pull {
                 session: "latest".to_string(),
                 device: "emulator-5554".to_string(),
-                package: "com.rnsessiontelemetry.tvfixture".to_string(),
+                package: "com.rnandroidtvsessiontelemetry.tvfixture".to_string(),
                 out: None,
                 keep: 10,
             }
@@ -486,7 +486,7 @@ mod tests {
             "--device",
             "emulator-5554",
             "--package",
-            "com.rnsessiontelemetry.tvfixture",
+            "com.rnandroidtvsessiontelemetry.tvfixture",
             "--out",
             "./sessions/first",
             "--keep",
@@ -499,7 +499,7 @@ mod tests {
             Command::Pull {
                 session: "1789277657612".to_string(),
                 device: "emulator-5554".to_string(),
-                package: "com.rnsessiontelemetry.tvfixture".to_string(),
+                package: "com.rnandroidtvsessiontelemetry.tvfixture".to_string(),
                 out: Some("./sessions/first".to_string()),
                 keep: 5,
             }
@@ -511,7 +511,7 @@ mod tests {
             name: "catalog-navigation".to_string(),
             mode: RecordMode::Qa,
             device: "192.168.1.40:5555".to_string(),
-            package: "com.rnsessiontelemetry.tvfixture".to_string(),
+            package: "com.rnandroidtvsessiontelemetry.tvfixture".to_string(),
             started_at_unix_ms: 1_000,
             bookmarks: Vec::new(),
             device_clock_offset_ms: None,

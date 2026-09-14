@@ -27,7 +27,7 @@ afterEvaluate {
 }
 
 android {
-  namespace "com.rnsessiontelemetry.reactnative"
+  namespace "com.rnandroidtvsessiontelemetry.reactnative"
   compileSdk getExtOrDefault("compileSdkVersion", 36)
 
   defaultConfig {

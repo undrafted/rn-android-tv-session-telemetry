@@ -140,8 +140,8 @@ fn device_is_connected(device: &str) -> bool {
 
 // Mirrored exactly in SessionWriterModule.kt's ACTION_START_SESSION/ACTION_STOP_SESSION - no
 // shared-constant mechanism across Kotlin and Rust, so keep both sides in sync by hand.
-const ACTION_START_SESSION: &str = "com.rnsessiontelemetry.reactnative.action.START_SESSION";
-const ACTION_STOP_SESSION: &str = "com.rnsessiontelemetry.reactnative.action.STOP_SESSION";
+const ACTION_START_SESSION: &str = "com.rnandroidtvsessiontelemetry.reactnative.action.START_SESSION";
+const ACTION_STOP_SESSION: &str = "com.rnandroidtvsessiontelemetry.reactnative.action.STOP_SESSION";
 
 /// Sends a session-control broadcast to `package` on `device`. Best-effort by design, not
 /// just by accident: `record` is commonly run *before* the app has even launched, so there's
